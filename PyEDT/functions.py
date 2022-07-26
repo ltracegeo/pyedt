@@ -9,223 +9,230 @@ INF = 2**32-1
 ############################################
 ### Cuda EDT Function steps
 ############################################
-@cuda.jit(debug=False, opt=True)
-def gedt_x(A, line_length, voxels_per_thread):
-    shared = cuda.shared.array(shape=(line_length,2), dtype=uint32)
-    changed = cuda.shared.array(shape=1, dtype=uint32)
-    output_array = 0
-    input_array = 1
-    delta = uint32(1)
+def compile_gedt_x(line_length, voxels_per_thread):
+    @cuda.jit(debug=False, opt=True)
+    def gedt_x(A):
+        shared = cuda.shared.array(shape=(line_length, 2), dtype=uint32)
+        changed = cuda.shared.array(shape=1, dtype=uint32)
+        output_array = 0
+        input_array = 1
+        delta = uint32(1)
 
-    tx = cuda.threadIdx.x
-    bx = cuda.blockIdx.x
-    by = cuda.blockIdx.y
-    
-    if tx == 0:
-        changed[0] = 1
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        if A[actual_tx, bx, by] == 1:
-            shared[actual_tx, 0] = INF
-            shared[actual_tx, 1] = INF
-        else:
-            shared[actual_tx, 0] = 0
-            shared[actual_tx, 1] = 0
-    cuda.syncthreads()    
-    
-    while changed[0] == 1:
-        cuda.syncthreads()
-        if tx == 0:
-            changed[0] = 0
-        cuda.syncthreads()
-        output_array = 1 - output_array
-        input_array = 1 - input_array
+        tx = cuda.threadIdx.x
+        bx = cuda.blockIdx.x
+        by = cuda.blockIdx.y
         
+        if tx == 0:
+            changed[0] = 1
         for i in range(voxels_per_thread):
             actual_tx = voxels_per_thread*tx + i
-            if (0 < actual_tx) and (actual_tx < line_length):
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if left_val < center_val:
-                    if left_val <= right_val:
-                        shared[actual_tx, output_array] = left_val
-                        if changed[0] == 0: changed[0] = 1
-                    else: # left_val > right_val
+            if A[actual_tx, bx, by] == 1:
+                shared[actual_tx, 0] = INF
+                shared[actual_tx, 1] = INF
+            else:
+                shared[actual_tx, 0] = 0
+                shared[actual_tx, 1] = 0
+        cuda.syncthreads()    
+        
+        while changed[0] == 1:
+            cuda.syncthreads()
+            if tx == 0:
+                changed[0] = 0
+            cuda.syncthreads()
+            output_array = 1 - output_array
+            input_array = 1 - input_array
+            
+            for i in range(voxels_per_thread):
+                actual_tx = voxels_per_thread*tx + i
+                if (0 < actual_tx) and (actual_tx < line_length):
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if left_val < center_val:
+                        if left_val <= right_val:
+                            shared[actual_tx, output_array] = left_val
+                            if changed[0] == 0: changed[0] = 1
+                        else: # left_val > right_val
+                            shared[actual_tx, output_array] = right_val
+                            if changed[0] == 0: changed[0] = 1
+                    elif right_val < center_val:
                         shared[actual_tx, output_array] = right_val
                         if changed[0] == 0: changed[0] = 1
-                elif right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == 0:
-                center_val = shared[actual_tx, input_array]
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == line_length:
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                if left_val < center_val:
-                    shared[actual_tx, output_array] = left_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-        delta += 2
-        cuda.syncthreads()
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == 0:
+                    center_val = shared[actual_tx, input_array]
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if right_val < center_val:
+                        shared[actual_tx, output_array] = right_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == line_length:
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    if left_val < center_val:
+                        shared[actual_tx, output_array] = left_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+            delta += 2
+            cuda.syncthreads()
 
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        A[actual_tx, bx, by] = shared[actual_tx, input_array]
-
-    
-@cuda.jit(debug=False, opt=True)
-def gedt_y(A, line_length, voxels_per_thread):
-    shared = cuda.shared.array(shape=(line_length,2), dtype=uint32)
-    changed = cuda.shared.array(shape=1, dtype=uint32)
-    output_array = 0
-    input_array = 1
-    delta = uint32(1)
-
-    tx = cuda.threadIdx.x
-    bx = cuda.blockIdx.x
-    by = cuda.blockIdx.y
-    
-    if tx == 0:
-        changed[0] = 1
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        shared[actual_tx, 0] = A[bx, actual_tx, by]
-        shared[actual_tx, 1] = A[bx, actual_tx, by]
-        
-    cuda.syncthreads()    
-    
-    while changed[0] == 1:
-        cuda.syncthreads()
-        if tx == 0:
-            changed[0] = 0
-        cuda.syncthreads()
-        output_array = 1 - output_array
-        input_array = 1 - input_array
-        
         for i in range(voxels_per_thread):
             actual_tx = voxels_per_thread*tx + i
+            A[actual_tx, bx, by] = shared[actual_tx, input_array]
+    
+    return gedt_x    
+
+
+def compile_gedt_y(line_length, voxels_per_thread):    
+    @cuda.jit(debug=False, opt=True)
+    def gedt_y(A):
+        shared = cuda.shared.array(shape=(line_length, 2), dtype=uint32)
+        changed = cuda.shared.array(shape=1, dtype=uint32)
+        output_array = 0
+        input_array = 1
+        delta = uint32(1)
+
+        tx = cuda.threadIdx.x
+        bx = cuda.blockIdx.x
+        by = cuda.blockIdx.y
         
-            if (0 < actual_tx) and (actual_tx < line_length):
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if left_val < center_val:
-                    if left_val <= right_val:
-                        shared[actual_tx, output_array] = left_val
-                        if changed[0] == 0: changed[0] = 1
-                    else: # left_val > right_val
-                        shared[actual_tx, output_array] = right_val
-                        if changed[0] == 0: changed[0] = 1
-                elif right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == 0:
-                center_val = shared[actual_tx, input_array]
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == line_length:
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                if left_val < center_val:
-                    shared[actual_tx, output_array] = left_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-        delta += 2
-        cuda.syncthreads()
-
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        A[bx, actual_tx, by] = shared[actual_tx, input_array]
-    
-
-@cuda.jit(debug=False, opt=True)
-def gedt_z(A, line_length, voxels_per_thread):
-    shared = cuda.shared.array(shape=(line_length,2), dtype=uint32)
-    changed = cuda.shared.array(shape=1, dtype=uint32)
-    output_array = 0
-    input_array = 1
-    delta = uint32(1)
-
-    tx = cuda.threadIdx.x
-    bx = cuda.blockIdx.x
-    by = cuda.blockIdx.y
-    
-    if tx == 0:
-        changed[0] = 1
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        shared[actual_tx, 0] = A[bx, by, actual_tx]
-        shared[actual_tx, 1] = A[bx, by, actual_tx]
-    
-    cuda.syncthreads()    
-    
-    while changed[0] == 1:
-        cuda.syncthreads()
         if tx == 0:
-            changed[0] = 0
-        cuda.syncthreads()
-        output_array = 1 - output_array
-        input_array = 1 - input_array
-        
+            changed[0] = 1
         for i in range(voxels_per_thread):
             actual_tx = voxels_per_thread*tx + i
+            shared[actual_tx, 0] = A[bx, actual_tx, by]
+            shared[actual_tx, 1] = A[bx, actual_tx, by]
+            
+        cuda.syncthreads()    
         
-            if (0 < actual_tx) and (actual_tx < line_length):
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if left_val < center_val:
-                    if left_val <= right_val:
-                        shared[actual_tx, output_array] = left_val
-                        if changed[0] == 0: changed[0] = 1
-                    else: # left_val > right_val
+        while changed[0] == 1:
+            cuda.syncthreads()
+            if tx == 0:
+                changed[0] = 0
+            cuda.syncthreads()
+            output_array = 1 - output_array
+            input_array = 1 - input_array
+            
+            for i in range(voxels_per_thread):
+                actual_tx = voxels_per_thread*tx + i
+            
+                if (0 < actual_tx) and (actual_tx < line_length):
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if left_val < center_val:
+                        if left_val <= right_val:
+                            shared[actual_tx, output_array] = left_val
+                            if changed[0] == 0: changed[0] = 1
+                        else: # left_val > right_val
+                            shared[actual_tx, output_array] = right_val
+                            if changed[0] == 0: changed[0] = 1
+                    elif right_val < center_val:
                         shared[actual_tx, output_array] = right_val
                         if changed[0] == 0: changed[0] = 1
-                elif right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == 0:
-                center_val = shared[actual_tx, input_array]
-                right_val = shared[actual_tx + 1, input_array] + delta
-                if right_val < center_val:
-                    shared[actual_tx, output_array] = right_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-            elif actual_tx == line_length:
-                center_val = shared[actual_tx, input_array]
-                left_val = shared[actual_tx - 1, input_array] + delta
-                if left_val < center_val:
-                    shared[actual_tx, output_array] = left_val
-                    if changed[0] == 0: changed[0] = 1
-                else:
-                    shared[actual_tx, output_array] = center_val
-        delta += 2
-        cuda.syncthreads()
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == 0:
+                    center_val = shared[actual_tx, input_array]
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if right_val < center_val:
+                        shared[actual_tx, output_array] = right_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == line_length:
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    if left_val < center_val:
+                        shared[actual_tx, output_array] = left_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+            delta += 2
+            cuda.syncthreads()
 
-    for i in range(voxels_per_thread):
-        actual_tx = voxels_per_thread*tx + i
-        A[bx, by, actual_tx] = shared[actual_tx, input_array]
+        for i in range(voxels_per_thread):
+            actual_tx = voxels_per_thread*tx + i
+            A[bx, actual_tx, by] = shared[actual_tx, input_array]
+    return gedt_y        
+    
+
+def compile_gedt_z(line_length, voxels_per_thread):   
+    @cuda.jit(debug=False, opt=True)
+    def gedt_z(A):
+        shared = cuda.shared.array(shape=(line_length, 2), dtype=uint32)
+        changed = cuda.shared.array(shape=1, dtype=uint32)
+        output_array = 0
+        input_array = 1
+        delta = uint32(1)
+
+        tx = cuda.threadIdx.x
+        bx = cuda.blockIdx.x
+        by = cuda.blockIdx.y
         
+        if tx == 0:
+            changed[0] = 1
+        for i in range(voxels_per_thread):
+            actual_tx = voxels_per_thread*tx + i
+            shared[actual_tx, 0] = A[bx, by, actual_tx]
+            shared[actual_tx, 1] = A[bx, by, actual_tx]
+        
+        cuda.syncthreads()    
+        
+        while changed[0] == 1:
+            cuda.syncthreads()
+            if tx == 0:
+                changed[0] = 0
+            cuda.syncthreads()
+            output_array = 1 - output_array
+            input_array = 1 - input_array
+            
+            for i in range(voxels_per_thread):
+                actual_tx = voxels_per_thread*tx + i
+            
+                if (0 < actual_tx) and (actual_tx < line_length):
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if left_val < center_val:
+                        if left_val <= right_val:
+                            shared[actual_tx, output_array] = left_val
+                            if changed[0] == 0: changed[0] = 1
+                        else: # left_val > right_val
+                            shared[actual_tx, output_array] = right_val
+                            if changed[0] == 0: changed[0] = 1
+                    elif right_val < center_val:
+                        shared[actual_tx, output_array] = right_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == 0:
+                    center_val = shared[actual_tx, input_array]
+                    right_val = shared[actual_tx + 1, input_array] + delta
+                    if right_val < center_val:
+                        shared[actual_tx, output_array] = right_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+                elif actual_tx == line_length:
+                    center_val = shared[actual_tx, input_array]
+                    left_val = shared[actual_tx - 1, input_array] + delta
+                    if left_val < center_val:
+                        shared[actual_tx, output_array] = left_val
+                        if changed[0] == 0: changed[0] = 1
+                    else:
+                        shared[actual_tx, output_array] = center_val
+            delta += 2
+            cuda.syncthreads()
+
+        for i in range(voxels_per_thread):
+            actual_tx = voxels_per_thread*tx + i
+            A[bx, by, actual_tx] = shared[actual_tx, input_array]
+    return gedt_z
+    
         
 ############################################
 ### CPU EDT Function steps

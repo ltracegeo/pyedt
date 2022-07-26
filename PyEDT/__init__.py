@@ -1,1 +1,1 @@
-from .interface import edt_gpu, edt_cpu
+from .interface import edt_gpu, edt_cpu, C

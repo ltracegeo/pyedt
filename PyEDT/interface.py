@@ -44,18 +44,19 @@ def edt_gpu(A):
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     A_d = cuda.to_device(A)
     x_dim, y_dim, z_dim = A.shape
-    for grid_dim_1, grid_dim_2, line_length, gedt in (
-    (y_dim, z_dim, x_dim, gedt_x),
-    (x_dim, z_dim, y_dim, gedt_y),
-    (x_dim, y_dim, z_dim, gedt_z)
+    for grid_dim_1, grid_dim_2, line_length, gedt_compiler in (
+    (y_dim, z_dim, x_dim, compile_gedt_x),
+    (x_dim, z_dim, y_dim, compile_gedt_y),
+    (x_dim, y_dim, z_dim, compile_gedt_z)
     ):
         voxels_per_thread = math.ceil(line_length/max_threads_per_block)
         threads_per_block = math.ceil(line_length/voxels_per_thread)
+        gedt = gedt_compiler(line_length, voxels_per_thread)
         gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d)
 
     C = A_d.copy_to_host()
     del A_d
-    return A
+    return C
     
 def edt_cpu():
     pass
