@@ -1,4 +1,5 @@
 import math
+import time
 
 from numba import cuda, float32, uint16, uint32, njit, prange
 from numba.cuda.cudadrv.driver import CudaAPIError
@@ -79,7 +80,7 @@ def edt_cpu(A):
     return B
     
 
-def edt(A, force_method=None, minimum_segments=None):
+def edt(A, force_method=None, minimum_segments=3):
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
@@ -88,8 +89,10 @@ def edt(A, force_method=None, minimum_segments=None):
         raise ValueError(f"force_method must be one of 'cpu', 'gpu' or 'gpu-split', was {force_method}")
         
     if method == "cpu":
+        print("using cpu")
         function = edt_cpu
     elif method == "gpu":
+        print("using gpu")
         function = edt_gpu
     elif method == "gpu-split":
         free_memory, total_memory = cuda.current_context().get_memory_info()
@@ -97,14 +100,108 @@ def edt(A, force_method=None, minimum_segments=None):
         segments = math.ceil(math.sqrt(expected_memory_use/free_memory))
         if minimum_segments:
             segments = max(segments, minimum_segments)
+        print(f"using cpu {segments} segments")
         function = lambda x: edt_gpu_split(x, segments)
 
     return function(A)
 
-def run_benchmark():
-    pass
 
+def run_benchmark(size_override=None):
+    try:
+        from scipy import ndimage
+    except ModuleNotFoundError:
+        ndimage_loaded = False
+    else:
+        ndimage_loaded = True
+       
+    try:
+        import SimpleITK as sitk
+    except ModuleNotFoundError:
+        sitk_loaded = False
+    else:
+        sitk_loaded = True
 
+    try:
+        import edt as edt_ws
+    except ModuleNotFoundError:
+        edt_loaded = False
+    else:
+        edt_loaded = True
+
+    results = dict()
+    size = 20
+    A = np.zeros((size, size, size), dtype = np.uint32)
+    A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
+    _ = edt(A, force_method='cpu')
+    _ = edt(A, force_method='gpu')
+    _ = edt(A, force_method='gpu-split')
+        
+    if size_override:
+        sizes = size_override
+    else:
+        sizes = (200, 500, 1000, 1500, 2000)
+        
+    for size in sizes:
+        A = np.zeros((size, size, size), dtype = np.uint32)
+        A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
+    
+        for method in ('cpu', 'gpu'):
+            try:
+                start_time = time.monotonic()
+                _ = edt(A, force_method=method)
+                end_time = time.monotonic()
+            except Exception as e:
+                print(method, size, e)
+                results[f"{method}_{size}"] = "fail"
+            else:
+                results[f"{method}_{size}"] = end_time - start_time
+        for segments in (2, 3, 4):
+            try:
+                start_time = time.monotonic()
+                _ = edt(A, force_method="gpu-split", minimum_segments = segments)
+                end_time = time.monotonic()
+            except Exception as e:
+                print("gpu-split", size, e)
+                results[f"gpu-split_{segments}_{size}"] = "fail"
+            else:
+                results[f"gpu-split_{segments}_{size}"] = end_time - start_time
+                
+        if ndimage_loaded:
+            try:
+                start_time = time.monotonic()
+                _ = ndimage.distance_transform_edt(A)
+                end_time = time.monotonic()
+            except Exception as e:
+                print("ndimage", size, e)
+                results[f"ndimage_{segments}_{size}"] = "fail"
+            else:
+                results[f"ndimage_{segments}_{size}"] = end_time - start_time
+        
+        if sitk_loaded:
+            try:
+                start_time = time.monotonic()
+                _ = sitk.SignedMaurerDistanceMap(sitk.GetImageFromArray(A))
+                end_time = time.monotonic()
+            except Exception as e:
+                print("sitk", size, e)
+                results[f"sitk_{segments}_{size}"] = "fail"
+            else:
+                results[f"sitk_{segments}_{size}"] = end_time - start_time
+            
+        if edt_loaded:
+            try:
+                start_time = time.monotonic()
+                _ = edt_ws.edt(A)
+                end_time = time.monotonic()
+            except Exception as e:
+                print("edt", size, e)
+                results[f"edt_{segments}_{size}"] = "fail"
+            else:
+                results[f"edt_{segments}_{size}"] = end_time - start_time
+            
+    return results
+            
+    
 def _auto_decide_method(A):
     if not cuda.is_available():
         return "cpu"
@@ -112,7 +209,7 @@ def _auto_decide_method(A):
     free_memory, total_memory = cuda.current_context().get_memory_info()
     expected_memory_use = (A.size*BYTES_PER_PIXEL + BASE_DEVICE_MEMORY_USE) * MEMORY_TOLERANCE_MARGIN
     
-    if free_memory <= expected_memory_use:
+    if free_memory > expected_memory_use:
         return "gpu"
         
     return "gpu-split"
