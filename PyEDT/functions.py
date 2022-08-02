@@ -1,7 +1,13 @@
 import math
+import logging
 
-from numba import cuda, uint16, uint32, njit, prange
+import numpy as np
 
+from numba import cuda, uint16, uint32, njit, prange, get_num_threads
+from numba.np.ufunc.parallel import _get_thread_id
+
+logger = logging.getLogger("numba")
+logger.setLevel(logging.ERROR)
 
 INF = 2**32-1
 
@@ -44,7 +50,7 @@ def compile_gedt_x(line_length, voxels_per_thread):
             
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < line_length):
+                if (0 < actual_tx) and (actual_tx < (line_length-1)):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     right_val = shared[actual_tx + 1, input_array] + delta
@@ -68,7 +74,7 @@ def compile_gedt_x(line_length, voxels_per_thread):
                         if changed[0] == 0: changed[0] = 1
                     else:
                         shared[actual_tx, output_array] = center_val
-                elif actual_tx == line_length:
+                elif actual_tx == (line_length-1):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     if left_val < center_val:
@@ -119,7 +125,7 @@ def compile_gedt_y(line_length, voxels_per_thread):
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
             
-                if (0 < actual_tx) and (actual_tx < line_length):
+                if (0 < actual_tx) and (actual_tx < (line_length-1)):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     right_val = shared[actual_tx + 1, input_array] + delta
@@ -143,7 +149,7 @@ def compile_gedt_y(line_length, voxels_per_thread):
                         if changed[0] == 0: changed[0] = 1
                     else:
                         shared[actual_tx, output_array] = center_val
-                elif actual_tx == line_length:
+                elif actual_tx == (line_length-1):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     if left_val < center_val:
@@ -193,7 +199,7 @@ def compile_gedt_z(line_length, voxels_per_thread):
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
             
-                if (0 < actual_tx) and (actual_tx < line_length):
+                if (0 < actual_tx) and (actual_tx < (line_length-1)):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     right_val = shared[actual_tx + 1, input_array] + delta
@@ -217,7 +223,7 @@ def compile_gedt_z(line_length, voxels_per_thread):
                         if changed[0] == 0: changed[0] = 1
                     else:
                         shared[actual_tx, output_array] = center_val
-                elif actual_tx == line_length:
+                elif actual_tx == (line_length-1):
                     center_val = shared[actual_tx, input_array]
                     left_val = shared[actual_tx - 1, input_array] + delta
                     if left_val < center_val:
@@ -273,33 +279,63 @@ def single_pass_erosion_y(array):
     Inplace operation
     """
     w, h, d = array.shape
+    
+    threads_n = get_num_threads()
+    work_array = np.empty((h, threads_n), dtype = np.uint32)
+    
+    
     for i in prange(w * d):
         x = i % w
         z = i // w
+        delta = 1
+        thread_index = _get_thread_id()
             
-        for y in range(1, h):
-            current_n = array[x, y, z]
-            if current_n == 0:
-                continue
-            left_n = array[x, y-1, z]
-            if current_n == INF and left_n == INF:
-                continue
-            if current_n <= left_n:
-                continue
-            else:
-                array[x, y, z] = left_n + 2*math.sqrt(left_n) + 1
-                
-        for y in range(h - 2, -1, -1):
-            current_n = array[x, y, z]
-            if current_n == 0:
-                continue
-            right_n = array[x, y+1, z]
-            if current_n == INF and right_n == INF:
-                continue
-            if current_n <= right_n:
-                continue
-            else:
-                array[x, y, z] = right_n + 2*math.sqrt(right_n) + 1
+        changed = True
+        output_row = work_array[:, thread_index]
+        input_row = array[x, :, z]
+            
+        for y in range(h):
+            output_row[y] = input_row[y]
+        
+        while changed == True:
+            changed = False
+            for y in range(h):
+                if (y > 0) and (y < (h-1)):
+                    center_val = input_row[y]
+                    left_val = input_row[y - 1] + delta
+                    right_val = input_row[y + 1] + delta
+                    if left_val < center_val:
+                        if left_val <= right_val:
+                            output_row[y] = left_val
+                            changed = True
+                        else: # left_val > right_val
+                            output_row[y] = right_val
+                            changed = True
+                    elif right_val < center_val:
+                        output_row[y] = right_val
+                        changed = True
+                    else:
+                        output_row[y] = center_val
+                elif y == 0:
+                    center_val = input_row[y]
+                    right_val = input_row[y + 1] + delta
+                    if right_val < center_val:
+                        output_row[y] = right_val
+                        changed = True
+                    else:
+                        output_row[y] = center_val
+                elif y == (h-1):
+                    center_val = input_row[y]
+                    left_val = input_row[y - 1] + delta
+                    if left_val < center_val:
+                        output_row[y] = left_val
+                        changed = True
+                    else:
+                        output_row[y] = center_val
+            delta += 2
+            output_row, input_row = input_row, output_row
+
+        array[x, :, z] = output_row
 
 @njit(parallel=True)
 def single_pass_erosion_z(array):
@@ -307,30 +343,60 @@ def single_pass_erosion_z(array):
     Inplace operation
     """
     w, h, d = array.shape
+    
+    threads_n = get_num_threads()
+    work_array = np.empty((d, threads_n), dtype = np.uint32)
+    
+    
     for i in prange(w * h):
         x = i % w
         y = i // w
+        delta = 1
+        thread_index = _get_thread_id()
             
-        for z in range(1, d):
-            current_n = array[x, y, z]
-            if current_n == 0:
-                continue
-            left_n = array[x, y, z-1]
-            if current_n == INF and left_n == INF:
-                continue
-            if current_n <= left_n:
-                continue
-            else:
-                array[x, y, z] = left_n + 2*math.sqrt(left_n) + 1
-                
-        for z in range(d - 2, -1, -1):
-            current_n = array[x, y, z]
-            if current_n == 0:
-                continue
-            right_n = array[x, y, z+1]
-            if current_n == INF and right_n == INF:
-                continue
-            if current_n <= right_n:
-                continue
-            else:
-                array[x, y, z] = right_n + 2*math.sqrt(right_n) + 1
+        changed = True
+        output_row = work_array[:, thread_index]
+        input_row = array[x, y, :]
+            
+        for z in range(d):
+            output_row[z] = input_row[z]
+        
+        while changed == True:
+            changed = False
+            for z in range(d):
+                if (z > 0) and z < (d-1):
+                    center_val = input_row[z]
+                    left_val = input_row[z - 1] + delta
+                    right_val = input_row[z + 1] + delta
+                    if left_val < center_val:
+                        if left_val <= right_val:
+                            output_row[z] = left_val
+                            changed = True
+                        else: # left_val > right_val
+                            output_row[z] = right_val
+                            changed = True
+                    elif right_val < center_val:
+                        output_row[z] = right_val
+                        changed = True
+                    else:
+                        output_row[z] = center_val
+                elif z == 0:
+                    center_val = input_row[z]
+                    right_val = input_row[z + 1] + delta
+                    if right_val < center_val:
+                        output_row[z] = right_val
+                        changed = True
+                    else:
+                        output_row[z] = center_val
+                elif z == (d-1):
+                    center_val = input_row[z]
+                    left_val = input_row[z - 1] + delta
+                    if left_val < center_val:
+                        output_row[z] = left_val
+                        changed = True
+                    else:
+                        output_row[z] = center_val
+            delta += 2
+            output_row, input_row = input_row, output_row
+
+        array[x, y, :] = output_row

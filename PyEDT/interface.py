@@ -100,7 +100,7 @@ def edt(A, force_method=None, minimum_segments=3):
         segments = math.ceil(math.sqrt(expected_memory_use/free_memory))
         if minimum_segments:
             segments = max(segments, minimum_segments)
-        print(f"using cpu {segments} segments")
+        print(f"using gpu {segments} segments")
         function = lambda x: edt_gpu_split(x, segments)
 
     return function(A)
@@ -109,21 +109,24 @@ def edt(A, force_method=None, minimum_segments=3):
 def run_benchmark(size_override=None):
     try:
         from scipy import ndimage
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as e:
+        print("failed to load scipy", e)
         ndimage_loaded = False
     else:
         ndimage_loaded = True
        
     try:
         import SimpleITK as sitk
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as e:
+        print("failed to load SimpleITK", e)
         sitk_loaded = False
     else:
         sitk_loaded = True
 
     try:
         import edt as edt_ws
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as e:
+        print("failed to load edt", e)
         edt_loaded = False
     else:
         edt_loaded = True
