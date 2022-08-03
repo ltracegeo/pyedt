@@ -73,19 +73,19 @@ def edt_gpu_split(A, segments):
     
     
 def edt_cpu(A):
-    B = np.empty_like(A)
+    B = np.where(A > 0, INF, 0)
     start_time_x = time.monotonic()
-    single_pass_erosion_x(A, B)
+    single_pass_erosion_x(B)
     end_time_x = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     start_time_y = time.monotonic()
     single_pass_erosion_y(B)
     end_time_y = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     start_time_z = time.monotonic()
     single_pass_erosion_z(B)
     end_time_z = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     return B
     

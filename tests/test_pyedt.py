@@ -42,7 +42,7 @@ def test_benchmark_pass():
     assert(type(r) == dict)
 
 rng = np.random.default_rng(42)
-A = rng.binomial(1, 0.9, (100,100,100))
+A = rng.binomial(1, 0.9, (200,200,200))
 A = A.astype('uint32')
 # A = np.ones((50,50,50), dtype = np.uint32)
 # A[24:26, 24:26, 24:26] = 0
@@ -69,12 +69,13 @@ def test_cpu_results():
     A_cpu = edt(A, force_method='cpu')
     A_ndimage = (ndimage.distance_transform_edt(A)**2).astype(np.uint32)
     A_cpu.astype(np.uint16).tofile('A_cpu.raw')
+    print((np.where(A_cpu > A_ndimage, A_cpu - A_ndimage, A_ndimage - A_cpu) != 0).sum())
+    print((np.where(A_cpu > A_ndimage, A_cpu - A_ndimage, A_ndimage - A_cpu) >  1).sum())
+    print(np.unique(np.where(A_cpu > A_ndimage, A_cpu - A_ndimage, A_ndimage - A_cpu)))
+    print(np.unique(np.where(A_cpu > A_ndimage, np.sqrt(A_cpu) - np.sqrt(A_ndimage), np.sqrt(A_ndimage) - np.sqrt(A_cpu))))
     assert(np.allclose(A_ndimage, A_cpu, atol=1))
     
 def test_benchmark_cpu():
-    #rng = np.random.default_rng(42)
-    #A = rng.binomial(1, 0.95, (500,500,500))
-    #A = A.astype('uint32')
     size = 500
     A = np.zeros((size, size, size), dtype = np.uint32)
     A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
