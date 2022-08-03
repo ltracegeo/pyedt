@@ -13,7 +13,7 @@ BYTES_PER_PIXEL = 4
 MEMORY_TOLERANCE_MARGIN = 1.1
 
 
-def edt_gpu(A):
+def edt_gpu(A, closed_border=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     A_d = cuda.to_device(A)
@@ -25,7 +25,7 @@ def edt_gpu(A):
     ):
         voxels_per_thread = math.ceil(line_length/max_threads_per_block)
         threads_per_block = math.ceil(line_length/voxels_per_thread)
-        gedt = gedt_compiler(line_length, voxels_per_thread)
+        gedt = gedt_compiler(line_length, voxels_per_thread, closed_border)
         gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d)
 
     B = A_d.copy_to_host()
@@ -33,7 +33,7 @@ def edt_gpu(A):
     return B
 
 
-def edt_gpu_split(A, segments):
+def edt_gpu_split(A, segments, closed_border=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     x_dim, y_dim, z_dim = A.shape
@@ -58,7 +58,7 @@ def edt_gpu_split(A, segments):
 
         for slices in slices_tuple:
             if (line_length, voxels_per_thread) not in compiled_gedts.keys():
-                compiled_gedts[(line_length, voxels_per_thread)] = gedt_compiler(line_length, voxels_per_thread)
+                compiled_gedts[(line_length, voxels_per_thread)] = gedt_compiler(line_length, voxels_per_thread, closed_border)
             gedt = compiled_gedts[(line_length, voxels_per_thread)]
             ordered_slices = dict()
             ordered_slices[line_axis] = slices[0]
@@ -72,25 +72,25 @@ def edt_gpu_split(A, segments):
     return A
     
     
-def edt_cpu(A):
+def edt_cpu(A, closed_border=False):
     B = np.where(A > 0, INF, 0)
     start_time_x = time.monotonic()
-    single_pass_erosion_x(B)
+    single_pass_erosion_x(B, closed_border)
     end_time_x = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     start_time_y = time.monotonic()
-    single_pass_erosion_y(B)
+    single_pass_erosion_y(B, closed_border)
     end_time_y = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     start_time_z = time.monotonic()
-    single_pass_erosion_z(B)
+    single_pass_erosion_z(B, closed_border)
     end_time_z = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     return B
     
 
-def edt(A, force_method=None, minimum_segments=3):
+def edt(A, force_method=None, minimum_segments=3, closed_border=False):
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
@@ -111,9 +111,9 @@ def edt(A, force_method=None, minimum_segments=3):
         if minimum_segments:
             segments = max(segments, minimum_segments)
         print(f"using gpu {segments} segments")
-        function = lambda x: edt_gpu_split(x, segments)
+        function = lambda x, y: edt_gpu_split(x, segments, y)
 
-    return function(A)
+    return function(A, closed_border)
 
 
 def run_benchmark(size_override=None):
