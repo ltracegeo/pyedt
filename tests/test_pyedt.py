@@ -70,3 +70,14 @@ def test_cpu_results():
     A_ndimage = (ndimage.distance_transform_edt(A)**2).astype(np.uint32)
     A_cpu.astype(np.uint16).tofile('A_cpu.raw')
     assert(np.allclose(A_ndimage, A_cpu, atol=1))
+    
+def test_benchmark_cpu():
+    #rng = np.random.default_rng(42)
+    #A = rng.binomial(1, 0.95, (500,500,500))
+    #A = A.astype('uint32')
+    size = 500
+    A = np.zeros((size, size, size), dtype = np.uint32)
+    A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
+    A_cpu = edt(A, force_method='cpu')
+    assert(False)
+    
