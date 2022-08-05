@@ -28,7 +28,35 @@ def test_edt_cpu():
           EDGE_SIZE//4:3*EDGE_SIZE//4,
           EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
     assert(np.all(edt_cpu(array) == reference))
+
+def test_edt_gpu_2d():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
+    reference.astype(np.uint16).tofile("ndimage_2d.raw")
+    edt_gpu(array).astype(np.uint16).tofile("gpu_2d.raw")
+    assert(np.allclose(np.sqrt(reference), np.sqrt(edt_gpu(array)), atol=1.1))
+
+
+def test_edt_gpu_split_2d():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
+    assert(np.allclose(np.sqrt(reference), np.sqrt(edt_gpu_split(array, 2)), atol=1.1))
     
+
+def test_edt_cpu_2d():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
+    reference.astype(np.uint16).tofile("ndimage_2d.raw")
+    # edt_cpu(array).astype(np.uint16).tofile("cpu_2d.raw")
+    assert(np.allclose(np.sqrt(reference), np.sqrt(edt_cpu(array)), atol=1.1))
+
+
 def test_edt():
     array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
     array[EDGE_SIZE//4:3*EDGE_SIZE//4,
@@ -37,12 +65,12 @@ def test_edt():
     assert(np.all(edt(array) == reference))
     
 def test_benchmark_pass():
-    r = run_benchmark(size_override=(20,30))
+    r = run_benchmark(size_override=(10,20))
     print(r)
     assert(type(r) == dict)
 
 rng = np.random.default_rng(42)
-A = rng.binomial(1, 0.99, (200,200,200))
+A = rng.binomial(1, 0.99, (20,20,20))
 A = A.astype('uint32')
 # A = np.ones((50,50,50), dtype = np.uint32)
 # A[24:26, 24:26, 24:26] = 0
@@ -103,10 +131,10 @@ def test_cpu_border_results():
     print(np.unique(np.where(A_cpu > A_ndimage, np.sqrt(A_cpu) - np.sqrt(A_ndimage), np.sqrt(A_ndimage) - np.sqrt(A_cpu))))
     assert(np.allclose(np.sqrt(A_ndimage), np.sqrt(A_cpu), atol=1.1))
     
-def test_benchmark_cpu():
-    size = 200
-    A = np.zeros((size, size, size//2), dtype = np.uint32)
-    A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
-    A_cpu = edt(A, force_method='cpu')
-    assert(True)
+# def test_benchmark_cpu():
+    # size = 200
+    # A = np.zeros((size, size, size//2), dtype = np.uint32)
+    # A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
+    # A_cpu = edt(A, force_method='cpu')
+    # assert(True)
     
