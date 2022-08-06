@@ -1,5 +1,6 @@
 import math
 import time
+import logging
 
 from numba import cuda, float32, uint16, uint32, njit, prange
 from numba.cuda.cudadrv.driver import CudaAPIError
@@ -100,18 +101,18 @@ def edt_cpu(A, closed_border=False):
     if input_2d:
         B = B[..., np.newaxis]
     #B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
-    start_time_x = time.monotonic()
+    #start_time_x = time.monotonic()
     single_pass_erosion_x(B, closed_border)
-    end_time_x = time.monotonic()
+    #end_time_x = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
-    start_time_y = time.monotonic()
+    #start_time_y = time.monotonic()
     single_pass_erosion_y(B, closed_border)
-    end_time_y = time.monotonic()
+    #end_time_y = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
-    start_time_z = time.monotonic()
+    #start_time_z = time.monotonic()
     if B.shape[2] > 1:
         single_pass_erosion_z(B, closed_border)
-    end_time_z = time.monotonic()
+    #end_time_z = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     if  input_2d:
@@ -121,6 +122,7 @@ def edt_cpu(A, closed_border=False):
     
 
 def edt(A, force_method=None, minimum_segments=3, closed_border=False):
+    A = A.astype(np.uint32)
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
@@ -129,10 +131,10 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False):
         raise ValueError(f"force_method must be one of 'cpu', 'gpu' or 'gpu-split', was {force_method}")
         
     if method == "cpu":
-        print("using cpu")
+        logging.info("using cpu")
         function = edt_cpu
     elif method == "gpu":
-        print("using gpu")
+        logging.info("using gpu")
         function = edt_gpu
     elif method == "gpu-split":
         free_memory, total_memory = cuda.current_context().get_memory_info()
@@ -140,7 +142,7 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False):
         segments = math.ceil(math.sqrt(expected_memory_use/free_memory))
         if minimum_segments:
             segments = max(segments, minimum_segments)
-        print(f"using gpu {segments} segments")
+        logging.info(f"using gpu {segments} segments")
         function = lambda x, y: edt_gpu_split(x, segments, y)
 
     return function(A, closed_border)
@@ -150,7 +152,7 @@ def run_benchmark(size_override=None):
     try:
         from scipy import ndimage
     except ModuleNotFoundError as e:
-        print("failed to load scipy", e)
+        logging.info("failed to load scipy", e)
         ndimage_loaded = False
     else:
         ndimage_loaded = True
@@ -158,7 +160,7 @@ def run_benchmark(size_override=None):
     try:
         import SimpleITK as sitk
     except ModuleNotFoundError as e:
-        print("failed to load SimpleITK", e)
+        logging.info("failed to load SimpleITK", e)
         sitk_loaded = False
     else:
         sitk_loaded = True
@@ -166,7 +168,7 @@ def run_benchmark(size_override=None):
     try:
         import edt as edt_ws
     except ModuleNotFoundError as e:
-        print("failed to load edt", e)
+        logging.info("failed to load edt", e)
         edt_loaded = False
     else:
         edt_loaded = True
@@ -194,7 +196,7 @@ def run_benchmark(size_override=None):
                 _ = edt(A, force_method=method)
                 end_time = time.monotonic()
             except Exception as e:
-                print(method, size, e)
+                logging.info(method, size, e)
                 results[f"{method}_{size}"] = "fail"
             else:
                 results[f"{method}_{size}"] = end_time - start_time
@@ -204,7 +206,7 @@ def run_benchmark(size_override=None):
                 _ = edt(A, force_method="gpu-split", minimum_segments = segments)
                 end_time = time.monotonic()
             except Exception as e:
-                print("gpu-split", size, e)
+                logging.info("gpu-split", size, e)
                 results[f"gpu-split_{segments}_{size}"] = "fail"
             else:
                 results[f"gpu-split_{segments}_{size}"] = end_time - start_time
@@ -215,7 +217,7 @@ def run_benchmark(size_override=None):
                 _ = ndimage.distance_transform_edt(A)
                 end_time = time.monotonic()
             except Exception as e:
-                print("ndimage", size, e)
+                logging.info("ndimage", size, e)
                 results[f"ndimage_{segments}_{size}"] = "fail"
             else:
                 results[f"ndimage_{segments}_{size}"] = end_time - start_time
@@ -226,7 +228,7 @@ def run_benchmark(size_override=None):
                 _ = sitk.SignedMaurerDistanceMap(sitk.GetImageFromArray(A))
                 end_time = time.monotonic()
             except Exception as e:
-                print("sitk", size, e)
+                logging.info("sitk", size, e)
                 results[f"sitk_{segments}_{size}"] = "fail"
             else:
                 results[f"sitk_{segments}_{size}"] = end_time - start_time
@@ -237,7 +239,7 @@ def run_benchmark(size_override=None):
                 _ = edt_ws.edt(A)
                 end_time = time.monotonic()
             except Exception as e:
-                print("edt", size, e)
+                logging.info("edt", size, e)
                 results[f"edt_{segments}_{size}"] = "fail"
             else:
                 results[f"edt_{segments}_{size}"] = end_time - start_time
