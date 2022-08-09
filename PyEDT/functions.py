@@ -256,7 +256,7 @@ def compile_gedt_z(line_length, voxels_per_thread, closed_border):
 ############################################
 ### CPU EDT Function steps
 ############################################
-#@njit(parallel=True)
+@njit(parallel=True, cache=True)
 def single_pass_erosion_x(array, closed_border):
     """
     Inplace operation
@@ -268,7 +268,7 @@ def single_pass_erosion_x(array, closed_border):
             secondary_scan(array[-1::-1, i, j], closed_border)
             
 
-#@njit(parallel=True)
+@njit(parallel=True, cache=True)
 def single_pass_erosion_y(array, closed_border):
     """
     Inplace operation
@@ -280,7 +280,7 @@ def single_pass_erosion_y(array, closed_border):
             secondary_scan(array[i, -1::-1, j], closed_border)
 
 
-#@njit(parallel=True)
+@njit(parallel=True, cache=True)
 def single_pass_erosion_z(array, closed_border):
     """
     Inplace operation
@@ -292,7 +292,7 @@ def single_pass_erosion_z(array, closed_border):
             secondary_scan(array[i, j, -1::-1], closed_border)
 
 
-#@njit
+@njit(cache=True)
 def secondary_scan(arr, closed_border=False):
     h = arr.shape[0]
     output = arr.copy()

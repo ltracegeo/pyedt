@@ -12,6 +12,7 @@ from .functions import *
 BASE_DEVICE_MEMORY_USE = 5000000
 BYTES_PER_PIXEL = 4
 MEMORY_TOLERANCE_MARGIN = 1.1
+MIN_SIZE_FOR_GPU = 1000000000
 
 
 def edt_gpu(A, closed_border=False):
@@ -122,7 +123,9 @@ def edt_cpu(A, closed_border=False):
     
 
 def edt(A, force_method=None, minimum_segments=3, closed_border=False):
-    A = A.astype(np.uint32)
+    
+    if A.dtype != np.uint32:
+        A = A.astype(np.uint32)
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
