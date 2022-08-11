@@ -151,7 +151,7 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False):
     return function(A, closed_border)
 
 
-def run_benchmark(size_override=None):
+def run_benchmark(size_override=None, plot=False):
     try:
         from scipy import ndimage
     except ModuleNotFoundError as e:
@@ -213,7 +213,7 @@ def run_benchmark(size_override=None):
                 results[f"gpu-split_{segments}_{size}"] = "fail"
             else:
                 results[f"gpu-split_{segments}_{size}"] = end_time - start_time
-                
+
         if ndimage_loaded:
             try:
                 start_time = time.monotonic()
@@ -221,9 +221,9 @@ def run_benchmark(size_override=None):
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info("ndimage", size, e)
-                results[f"ndimage_{segments}_{size}"] = "fail"
+                results[f"ndimage_{size}"] = "fail"
             else:
-                results[f"ndimage_{segments}_{size}"] = end_time - start_time
+                results[f"ndimage_{size}"] = end_time - start_time
         
         if sitk_loaded:
             try:
@@ -232,9 +232,9 @@ def run_benchmark(size_override=None):
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info("sitk", size, e)
-                results[f"sitk_{segments}_{size}"] = "fail"
+                results[f"sitk_{size}"] = "fail"
             else:
-                results[f"sitk_{segments}_{size}"] = end_time - start_time
+                results[f"sitk_{size}"] = end_time - start_time
             
         if edt_loaded:
             try:
@@ -243,10 +243,41 @@ def run_benchmark(size_override=None):
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info("edt", size, e)
-                results[f"edt_{segments}_{size}"] = "fail"
+                results[f"edt_{size}"] = "fail"
             else:
-                results[f"edt_{segments}_{size}"] = end_time - start_time
-            
+                results[f"edt_{size}"] = end_time - start_time
+    
+    if plot:
+        import matplotlib.pyplot as plt
+        ax = plt.subplot(111)
+        ax.set_yscale('log')
+        cpu_names = [i for i in results.keys() if "cpu" in i] 
+        gpu_names = [i for i in results.keys() if "gpu" in i and "split" not in i]
+        gpu_split_2_names = [i for i in results.keys() if "gpu-split_2" in i]   
+        gpu_split_3_names = [i for i in results.keys() if "gpu-split_3" in i]
+        gpu_split_4_names = [i for i in results.keys() if "gpu-split_4" in i]
+        ndimage_names = [i for i in results.keys() if "ndimage" in i]
+        sitk_names = [i for i in results.keys() if "sitk" in i]
+        edt_names = [i for i in results.keys() if "edt" in i]
+        values = [cpu_names, 
+                  gpu_names, 
+                  gpu_split_2_names, 
+                  gpu_split_3_names, 
+                  gpu_split_4_names, 
+                  ndimage_names, 
+                  sitk_names, 
+                  edt_names]
+        values = [i for i in values if len(i) > 0]
+        for val in values:
+            ax.plot(list(int(i.split("_")[-1]) for i in val if results[i] != "fail"),
+                    list(results[i] for i in val if results[i] != "fail"), 
+                    "o--",
+                    label=val[0][:val[0].rfind("_")])
+        plt.xlabel("Volume edge size")
+        plt.ylabel("Run time [s]")
+        plt.legend()
+        plt.show()
+    
     return results
             
     
