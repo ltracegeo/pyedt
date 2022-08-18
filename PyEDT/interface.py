@@ -2,7 +2,7 @@ import math
 import time
 import logging
 
-from numba import cuda, float32, uint16, uint32, njit, prange
+from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
 from numba.cuda.cudadrv.driver import CudaAPIError
 import numpy as np
 
@@ -15,7 +15,7 @@ MEMORY_TOLERANCE_MARGIN = 1.1
 MIN_SIZE_FOR_GPU = 1000000000
 
 
-def edt_gpu(A, closed_border=False):
+def edt_gpu(A, closed_border=False, sqrt_result=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     input_2d = (A.ndim == 2)
@@ -24,9 +24,9 @@ def edt_gpu(A, closed_border=False):
     A_d = cuda.to_device(A)
     x_dim, y_dim, z_dim = A.shape
     for grid_dim_1, grid_dim_2, line_length, gedt_compiler in (
-    (y_dim, z_dim, x_dim, compile_gedt_x),
-    (x_dim, z_dim, y_dim, compile_gedt_y),
-    (x_dim, y_dim, z_dim, compile_gedt_z)
+    (y_dim, z_dim, x_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x')),
+    (x_dim, z_dim, y_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y')),
+    (x_dim, y_dim, z_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z', sqrt_result=sqrt_result))
     ):
         if line_length == 1:
             continue
@@ -37,13 +37,15 @@ def edt_gpu(A, closed_border=False):
 
     B = A_d.copy_to_host()
     del A_d
+    if sqrt_result:
+        B = B.view(np.float32)
     if  input_2d:
         return B[:, :, 0]
     else:
         return B
 
 
-def edt_gpu_split(A, segments, closed_border=False):
+def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     input_2d = (A.ndim == 2)
@@ -51,9 +53,9 @@ def edt_gpu_split(A, segments, closed_border=False):
         A = A[..., np.newaxis]
     B = A.copy()
     for grid_axis_1, grid_axis_2, line_axis, gedt_compiler in (
-    (1, 2, 0, compile_gedt_x),
-    (0, 2, 1, compile_gedt_y),
-    (0, 1, 2, compile_gedt_z)
+    (1, 2, 0, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x')),
+    (0, 2, 1, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y')),
+    (0, 1, 2, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z', sqrt_result=sqrt_result))
     ):  
         segments_1 = segments
         segments_2 = segments
@@ -89,40 +91,70 @@ def edt_gpu_split(A, segments, closed_border=False):
             B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = A_d.copy_to_host()
 
     del A_d
+    if sqrt_result:
+        B = B.view(np.float32)
     if  input_2d:
         return B[:, :, 0]
     else:
         return B
     
     
-def edt_cpu(A, closed_border=False):
+def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None):
     
-    B = np.where(A > 0, INF, 0)
+    A.astype(np.uint16).tofile("edt_cpu_A.raw")
+    if limit_cpus:
+        set_num_threads(limit_cpus)
+    B = np.empty(A.shape, dtype=np.uint32)
+    _fill_array(A, B)
     input_2d = (B.ndim == 2)
     if input_2d:
         B = B[..., np.newaxis]
-    #B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
+    B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
     #start_time_x = time.monotonic()
     single_pass_erosion_x(B, closed_border)
     #end_time_x = time.monotonic()
-    #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
+    B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     #start_time_y = time.monotonic()
     single_pass_erosion_y(B, closed_border)
     #end_time_y = time.monotonic()
-    #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
+    B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
         single_pass_erosion_z(B, closed_border)
     #end_time_z = time.monotonic()
-    #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
+    B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
+    if sqrt_result:
+        B = B.view(np.float32)
     if  input_2d:
         return B[:, :, 0]
     else:
         return B
-    
 
-def edt(A, force_method=None, minimum_segments=3, closed_border=False):
+
+@njit(parallel=True)
+def _fill_array(A, B):
+    if A.ndim == 3:
+        w, h, d = A.shape
+        for i in prange(w):
+            for j in range(h):
+                for k in range(d):
+                    if A[i, j, k] > 0:
+                        B[i, j, k] = np.uint32(INF)
+                    else:
+                        B[i, j, k] = 0
+    else:
+        w, h = A.shape
+        for i in prange(w):
+            for j in range(h):
+                    if A[i, j] > 0:
+                        B[i, j] = np.uint32(INF)
+                    else:
+                        B[i, j] = 0
+    
+        
+
+def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False):
     
     if A.dtype != np.uint32:
         A = A.astype(np.uint32)
@@ -146,9 +178,9 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False):
         if minimum_segments:
             segments = max(segments, minimum_segments)
         logging.info(f"using gpu {segments} segments")
-        function = lambda x, y: edt_gpu_split(x, segments, y)
+        function = lambda x, y, z: edt_gpu_split(x, segments, closed_border=y, sqrt_result=z)
 
-    return function(A, closed_border)
+    return function(A, closed_border, sqrt_result)
 
 
 def run_benchmark(size_override=None, plot=False):
