@@ -65,7 +65,7 @@ def test_edt():
     assert(np.all(edt(array) == reference))
     
 def test_benchmark_pass():
-    r = run_benchmark(size_override=(10,20))
+    r = run_benchmark(size_override=(10,20), test_sqrt=True)
     print(r)
     assert(type(r) == dict)
 

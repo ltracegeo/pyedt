@@ -26,7 +26,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False):
     for grid_dim_1, grid_dim_2, line_length, gedt_compiler in (
     (y_dim, z_dim, x_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x')),
     (x_dim, z_dim, y_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y')),
-    (x_dim, y_dim, z_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z', sqrt_result=sqrt_result))
+    (x_dim, y_dim, z_dim, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z'))
     ):
         if line_length == 1:
             continue
@@ -38,6 +38,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False):
     B = A_d.copy_to_host()
     del A_d
     if sqrt_result:
+        inplace_sqrt(B)
         B = B.view(np.float32)
     if  input_2d:
         return B[:, :, 0]
@@ -55,7 +56,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False):
     for grid_axis_1, grid_axis_2, line_axis, gedt_compiler in (
     (1, 2, 0, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x')),
     (0, 2, 1, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y')),
-    (0, 1, 2, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z', sqrt_result=sqrt_result))
+    (0, 1, 2, lambda line_length, voxels_per_thread, closed_border: compile_gedt(line_length, voxels_per_thread, closed_border, axis='z'))
     ):  
         segments_1 = segments
         segments_2 = segments
@@ -92,6 +93,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False):
 
     del A_d
     if sqrt_result:
+        inplace_sqrt(B)
         B = B.view(np.float32)
     if  input_2d:
         return B[:, :, 0]
@@ -109,20 +111,20 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None):
     input_2d = (B.ndim == 2)
     if input_2d:
         B = B[..., np.newaxis]
-    B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
     #start_time_x = time.monotonic()
     single_pass_erosion_x(B, closed_border)
     #end_time_x = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     #start_time_y = time.monotonic()
     single_pass_erosion_y(B, closed_border)
     #end_time_y = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
-        single_pass_erosion_z(B, closed_border)
+        single_pass_erosion_z(B, closed_border, sqrt_result=sqrt_result)
     #end_time_z = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     if sqrt_result:
         B = B.view(np.float32)
@@ -183,7 +185,7 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
     return function(A, closed_border, sqrt_result)
 
 
-def run_benchmark(size_override=None, plot=False):
+def run_benchmark(size_override=None, plot=False, test_sqrt=False):
     try:
         from scipy import ndimage
     except ModuleNotFoundError as e:
@@ -235,6 +237,16 @@ def run_benchmark(size_override=None, plot=False):
                 results[f"{method}_{size}"] = "fail"
             else:
                 results[f"{method}_{size}"] = end_time - start_time
+            if test_sqrt:
+                try:
+                    start_time = time.monotonic()
+                    _ = edt(A, force_method=method, sqrt_result=True)
+                    end_time = time.monotonic()
+                except Exception as e:
+                    logging.info(method, size, e)
+                    results[f"{method}_sqrt_{size}"] = "fail"
+                else:
+                    results[f"{method}_sqrt_{size}"] = end_time - start_time
         for segments in (2, 3, 4):
             try:
                 start_time = time.monotonic()
@@ -245,6 +257,16 @@ def run_benchmark(size_override=None, plot=False):
                 results[f"gpu-split_{segments}_{size}"] = "fail"
             else:
                 results[f"gpu-split_{segments}_{size}"] = end_time - start_time
+            if test_sqrt:
+                try:
+                    start_time = time.monotonic()
+                    _ = edt(A, force_method="gpu-split", minimum_segments=segments, sqrt_result=True)
+                    end_time = time.monotonic()
+                except Exception as e:
+                    logging.info("gpu-split", size, e)
+                    results[f"gpu-split_{segments}_sqrt_{size}"] = "fail"
+                else:
+                    results[f"gpu-split_{segments}_sqrt_{size}"] = end_time - start_time
 
         if ndimage_loaded:
             try:
@@ -283,19 +305,29 @@ def run_benchmark(size_override=None, plot=False):
         import matplotlib.pyplot as plt
         ax = plt.subplot(111)
         ax.set_yscale('log')
-        cpu_names = [i for i in results.keys() if "cpu" in i] 
-        gpu_names = [i for i in results.keys() if "gpu" in i and "split" not in i]
-        gpu_split_2_names = [i for i in results.keys() if "gpu-split_2" in i]   
-        gpu_split_3_names = [i for i in results.keys() if "gpu-split_3" in i]
-        gpu_split_4_names = [i for i in results.keys() if "gpu-split_4" in i]
+        cpu_names = [i for i in results.keys() if "cpu" in i and "sqrt" not in i] 
+        cpu_sqrt_names = [i for i in results.keys() if "cpu" in i and "sqrt" in i]
+        gpu_names = [i for i in results.keys() if "gpu" in i and "split" not in i and "sqrt" not in i]
+        gpu_sqrt_names = [i for i in results.keys() if "gpu" in i and "split" not in i and "sqrt" in i]
+        gpu_split_2_names = [i for i in results.keys() if "gpu-split_2" in i and "sqrt" not in i]  
+        gpu_sqrt_split_2_names = [i for i in results.keys() if "gpu-split_2" in i and "sqrt" in i]        
+        gpu_split_3_names = [i for i in results.keys() if "gpu-split_3" in i and "sqrt" not in i]
+        gpu_sqrt_split_3_names = [i for i in results.keys() if "gpu-split_3" in i and "sqrt" in i]
+        gpu_split_4_names = [i for i in results.keys() if "gpu-split_4" in i and "sqrt" not in i]
+        gpu_sqrt_split_4_names = [i for i in results.keys() if "gpu-split_4" in i and "sqrt" in i]
         ndimage_names = [i for i in results.keys() if "ndimage" in i]
         sitk_names = [i for i in results.keys() if "sitk" in i]
         edt_names = [i for i in results.keys() if "edt" in i]
         values = [cpu_names, 
-                  gpu_names, 
-                  gpu_split_2_names, 
-                  gpu_split_3_names, 
-                  gpu_split_4_names, 
+                  cpu_sqrt_names,
+                  gpu_names,
+                  gpu_sqrt_names,
+                  gpu_split_2_names,
+                  gpu_sqrt_split_2_names,
+                  gpu_split_3_names,
+                  gpu_sqrt_split_3_names,
+                  gpu_split_4_names,
+                  gpu_sqrt_split_4_names,
                   ndimage_names, 
                   sitk_names, 
                   edt_names]

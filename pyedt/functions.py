@@ -16,12 +16,9 @@ MAX_STEPS = 10**6
 ############################################
 ### Cuda EDT Function steps
 ############################################
-def compile_gedt(line_length, voxels_per_thread, closed_border, axis, sqrt_result=False):
+def compile_gedt(line_length, voxels_per_thread, closed_border, axis):
     if axis not in 'xyz':
         logger.error(f"'axis' must be one of 'x', 'y', or 'z', was '{axis}'")
-        return None
-    if axis != 'z' and sqrt_result == True:
-        logger.error(f"'sqrt_result' can be True only when 'axis' is equal to 'z', was '{axis}'")
         return None
     @cuda.jit(debug=False, opt=True)
     def gedt(A):
@@ -122,17 +119,9 @@ def compile_gedt(line_length, voxels_per_thread, closed_border, axis, sqrt_resul
                 actual_tx = voxels_per_thread*tx + i
                 A[bx, actual_tx, by] = shared[actual_tx, input_array]
         elif axis == 'z':
-            if sqrt_result:
-                for i in range(voxels_per_thread):
-                    actual_tx = voxels_per_thread*tx + i
-                    val = shared[actual_tx, input_array]
-                    val_sq = math.sqrt(val)
-                    val_int = np.float32(val_sq).view(np.uint32)
-                    A[bx, by, actual_tx] = val_int
-            else:
-                for i in range(voxels_per_thread):
-                    actual_tx = voxels_per_thread*tx + i
-                    A[bx, by, actual_tx] = shared[actual_tx, input_array]
+            for i in range(voxels_per_thread):
+                actual_tx = voxels_per_thread*tx + i
+                A[bx, by, actual_tx] = shared[actual_tx, input_array]
     return gedt
         
     
@@ -282,4 +271,14 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False):
         arr[...] = np.sqrt(output).astype(np.float32).view(np.uint32)
     else:
         arr[...] = output
+    
+@njit(parallel=True, cache=True)
+def inplace_sqrt(A):
+    w, h, d = A.shape
+    for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                val = A[i, j, k]
+                val = np.float32(np.sqrt(val))
+                A[i, j, k] = val.view(np.uint32)
     
