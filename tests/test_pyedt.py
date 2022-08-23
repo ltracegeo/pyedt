@@ -14,6 +14,13 @@ def test_edt_gpu():
           EDGE_SIZE//4:3*EDGE_SIZE//4,
           EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
     assert(np.all(edt_gpu(array) == reference))
+    
+def test_edt_gpu_scaled():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    assert(edt_gpu(array, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
 
 def test_edt_gpu_split():
     array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
@@ -22,12 +29,26 @@ def test_edt_gpu_split():
           EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
     assert(np.all(edt_gpu_split(array, 2) == reference))
     
+def test_edt_gpu_split_scaled():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    assert(edt_gpu_split(array, 2, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
+    
 def test_edt_cpu():
     array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
     array[EDGE_SIZE//4:3*EDGE_SIZE//4,
           EDGE_SIZE//4:3*EDGE_SIZE//4,
           EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
     assert(np.all(edt_cpu(array) == reference))
+    
+def test_edt_cpu_scaled():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    assert(edt_cpu(array, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
 
 def test_edt_gpu_2d():
     array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
