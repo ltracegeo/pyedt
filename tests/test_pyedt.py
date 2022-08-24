@@ -263,3 +263,18 @@ def test_square_scale():
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
 
+    
+# def test_benchmark_cpu():
+    # size = 200
+    # A = np.zeros((size, size, size//2), dtype = np.uint32)
+    # A[size//4:3*size//4, size//4:3*size//4, size//4:3*size//4] = 1
+    # A_cpu = edt(A, force_method='cpu')
+    # assert(True)
+    
+def test_autodecide():
+    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
+    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4,
+          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    processor = auto_decide_method(array)
+    assert(processor in ("cpu", "gpu", "gpu-split"))

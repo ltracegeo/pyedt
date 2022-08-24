@@ -464,7 +464,21 @@ def _auto_decide_method(A, multilabel=False):
     free_memory, total_memory = cuda.current_context().get_memory_info()
     expected_memory_use = (A.size*BYTES_PER_PIXEL + BASE_DEVICE_MEMORY_USE) * MEMORY_TOLERANCE_MARGIN
     
+    gpu = cuda.get_current_device()
+    MAX_GRID_DIM_X = gpu.MAX_GRID_DIM_X
+    MAX_GRID_DIM_Y = gpu.MAX_GRID_DIM_Y
+    MAX_GRID_DIM_Z = gpu.MAX_GRID_DIM_Z
+    MAX_SHARED_MEMORY_PER_BLOCK = gpu.MAX_SHARED_MEMORY_PER_BLOCK
+    
+    max_axis = np.max(A.shape)
+    max_grid = np.max((MAX_GRID_DIM_X, MAX_GRID_DIM_Y, MAX_GRID_DIM_Z))
+    
+    if ((MAX_SHARED_MEMORY_PER_BLOCK < (3 * (max_axis+1) * BYTES_PER_PIXEL * MEMORY_TOLERANCE_MARGIN)) or
+       (max_grid < max_axis)):
+       return "cpu"
+    
     if free_memory > expected_memory_use:
         return "gpu"
         
     return "gpu-split"
+auto_decide_method = _auto_decide_method # fix for pytest
