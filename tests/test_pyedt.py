@@ -264,8 +264,7 @@ def test_square_scale():
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, 0.5) and
            np.allclose(result_gpu, result_gpu_split, 0.5))
-
-    
+ 
 # def test_benchmark_cpu():
     # size = 200
     # A = np.zeros((size, size, size//2), dtype = np.uint32)
