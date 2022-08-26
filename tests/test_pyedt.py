@@ -5,103 +5,117 @@ from scipy import ndimage
 
 from pyedt.interface import *
 
-reference = np.fromfile(pathlib.Path(__file__).parent/"20_edt.raw", dtype=np.uint32).reshape(20, 20, 20)
-EDGE_SIZE = 20
+test_image = np.fromfile(pathlib.Path(__file__).parent/"test_array.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
+border_result = np.fromfile(pathlib.Path(__file__).parent/"border_result.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
+multilabel_result = np.fromfile(pathlib.Path(__file__).parent/"multilabel_result.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
+scale_result = np.fromfile(pathlib.Path(__file__).parent/"scale_result_f32.raw", dtype=np.float32).reshape(40, 50, 60)
+simple_result = np.fromfile(pathlib.Path(__file__).parent/"simple_result.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
+sqrt_result = np.fromfile(pathlib.Path(__file__).parent/"sqrt_result_f32.raw", dtype=np.float32).reshape(40, 50, 60)
+EDGE_SIZE = (40, 50, 60)
+SAVE_IMAGE = True
+TOLERANCE = 1e-3
 
+def array_generator():
+    array = np.zeros(EDGE_SIZE, dtype=np.uint32)
+    array[EDGE_SIZE[0]//4:3*EDGE_SIZE[0]//4,
+          EDGE_SIZE[1]//4:3*EDGE_SIZE[1]//4,
+          EDGE_SIZE[2]//4:3*EDGE_SIZE[2]//4] = 1
+    array[EDGE_SIZE[0]//2:4*EDGE_SIZE[0]//5,
+          EDGE_SIZE[1]//2:4*EDGE_SIZE[1]//5,
+          EDGE_SIZE[2]//2:4*EDGE_SIZE[2]//5] = 2
+    array[3*EDGE_SIZE[0]//8:5*EDGE_SIZE[0]//8,
+          3*EDGE_SIZE[1]//8:5*EDGE_SIZE[1]//8,
+          3*EDGE_SIZE[2]//8:5*EDGE_SIZE[2]//8] = 3
+    array[EDGE_SIZE[0]//4:3*EDGE_SIZE[0]//4,
+          3*EDGE_SIZE[1]//4:7*EDGE_SIZE[1]//8,
+          EDGE_SIZE[2]//4:3*EDGE_SIZE[2]//4] = 5
+    array[2*EDGE_SIZE[0]//5:3*EDGE_SIZE[0]//5,
+          3*EDGE_SIZE[1]//4:7*EDGE_SIZE[1]//8,
+          0:1*EDGE_SIZE[2]//3] = 7
+    return array
+    
+# GPU test
 def test_edt_gpu():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(np.all(edt_gpu(array) == reference))
+    array = test_image.copy()
+    result = edt_gpu(array)
+    assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_gpu_scaled():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(edt_gpu(array, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
+    array = test_image.copy()
+    result = edt_gpu(array, scale=(1.2, 2.4, 3.6))
+    assert(np.allclose(result, scale_result, TOLERANCE))
     
 def test_edt_gpu_multilabel():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    array[EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5] = 2
-    array[3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8] = 3
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          3*EDGE_SIZE//4:7*EDGE_SIZE//8,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 5
-    assert(edt_gpu(array, multilabel=True).dtype == np.float32)
+    array = test_image.copy()
+    result = edt_gpu(array, multilabel=True)
+    assert(np.allclose(result, multilabel_result, TOLERANCE))
 
-def test_edt_gpu_split():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(np.all(edt_gpu_split(array, 2) == reference))
+def test_edt_gpu_border():
+    array = test_image.copy()
+    result = edt_gpu(array, closed_border=True)
+    assert(np.allclose(result, border_result, TOLERANCE))
     
-def test_edt_gpu_split_scaled():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(edt_gpu_split(array, 2, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
+def test_edt_gpu_sqrt():
+    array = test_image.copy()
+    result = edt_gpu(array, sqrt_result=True)
+    assert(np.allclose(result, sqrt_result, TOLERANCE))
+
+# GPU split test
+def test_edt_split_gpu():
+    array = test_image.copy()
+    result = edt_gpu_split(array, 2)
+    assert(np.allclose(result, simple_result, TOLERANCE))   
     
-def test_edt_gpu_split_multilabel():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    array[EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5] = 2
-    array[3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8] = 3
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          3*EDGE_SIZE//4:7*EDGE_SIZE//8,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 5
-    assert(edt_gpu_split(array, 2, multilabel=True).dtype == np.uint32)
+def test_edt_split_gpu_scaled():
+    array = test_image.copy()
+    result = edt_gpu_split(array, 2, scale=(1.2, 2.4, 3.6))
+    assert(np.allclose(result, scale_result, TOLERANCE))
     
+def test_edt_split_gpu_multilabel():
+    array = test_image.copy()
+    result = edt_gpu_split(array, 2, multilabel=True)
+    assert(np.allclose(result, multilabel_result, TOLERANCE))
+
+def test_edt_split_gpu_border():
+    array = test_image.copy()
+    result = edt_gpu_split(array, 2, closed_border=True)
+    assert(np.allclose(result, border_result, TOLERANCE))
+    
+def test_edt_split_gpu_sqrt():
+    array = test_image.copy()
+    result = edt_gpu_split(array, 2, sqrt_result=True)
+    assert(np.allclose(result, sqrt_result, TOLERANCE))
+    
+# CPU test    
 def test_edt_cpu():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(np.all(edt_cpu(array) == reference))
+    array = test_image.copy()
+    result = edt_cpu(array)
+    assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_cpu_scaled():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    assert(edt_cpu(array, scale=(1.2, 2.4, 3.6)).dtype == np.float32)
+    array = test_image.copy()
+    result = edt_cpu(array, scale=(1.2, 2.4, 3.6))
+    assert(np.allclose(result, scale_result, TOLERANCE))
     
 def test_edt_cpu_multilabel():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
-    array[EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5,
-          EDGE_SIZE//2:4*EDGE_SIZE//5] = 2
-    array[3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8,
-          3*EDGE_SIZE//8:5*EDGE_SIZE//8] = 3
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          3*EDGE_SIZE//4:7*EDGE_SIZE//8,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 5
-    assert(edt_cpu(array, multilabel=True).dtype == np.uint32)
+    array = test_image.copy()
+    result = edt_cpu(array, multilabel=True)
+    assert(np.allclose(result, multilabel_result, TOLERANCE))
 
+def test_edt_cpu_border():
+    array = test_image.copy()
+    result = edt_cpu(array, closed_border=True)
+    assert(np.allclose(result, border_result, TOLERANCE))
+    
+def test_edt_cpu_sqrt():
+    array = test_image.copy()
+    result = edt_cpu(array, sqrt_result=True)
+    assert(np.allclose(result, sqrt_result, TOLERANCE))
+
+
+# test 2D
 def test_edt_gpu_2d():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    array = array_generator()[:, EDGE_SIZE//2, :]
     reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
     reference.astype(np.uint16).tofile("ndimage_2d.raw")
     edt_gpu(array).astype(np.uint16).tofile("gpu_2d.raw")
@@ -109,40 +123,34 @@ def test_edt_gpu_2d():
 
 
 def test_edt_gpu_split_2d():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    array = array_generator()[:, EDGE_SIZE//2, :]
     reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
     assert(np.allclose(np.sqrt(reference), np.sqrt(edt_gpu_split(array, 2)), atol=1.1))
     
 
 def test_edt_cpu_2d():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    array = array_generator()[:, EDGE_SIZE//2, :]
     reference = (ndimage.distance_transform_edt(array)**2).astype(np.uint32)
     reference.astype(np.uint16).tofile("ndimage_2d.raw")
-    # edt_cpu(array).astype(np.uint16).tofile("cpu_2d.raw")
     assert(np.allclose(np.sqrt(reference), np.sqrt(edt_cpu(array)), atol=1.1))
 
 
 def test_edt():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    array = array_generator()
     assert(np.all(edt(array) == reference))
+    
     
 def test_benchmark_pass():
     r = run_benchmark(size_override=(10,20), test_sqrt=True)
     print(r)
     assert(type(r) == dict)
 
+
 rng = np.random.default_rng(42)
 A = rng.binomial(1, 0.99, (40,40,40))
 A = A.astype('uint32')
-# A = np.ones((50,50,50), dtype = np.uint32)
-# A[24:26, 24:26, 24:26] = 0
+B = np.ones((50,50,50), dtype = np.uint32)
+B[24:26, 24:26, 24:26] = 0
 
 def test_gpu_cpu_results():
     

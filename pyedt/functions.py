@@ -491,7 +491,7 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
     
     if closed_border:
         if arr[0] > 1:
-            output[0] = 1
+            output[0] = scale
             x1 = -1
             y1 = 0
         else:
@@ -513,7 +513,7 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
     while (calculated_index < h) and (i < h):
         x4 = i * scale
         y4 = arr[i]
-        if x4 <= x3: # next anchor is not triggered
+        if x4 < x3: # next anchor is not triggered
             #check if next anchor can be changed for current point
             if y4 < y2: #updates next anchor
                 x2 = x4 

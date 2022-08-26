@@ -75,10 +75,10 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
             gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d, reference_array)
 
     B = A_d.copy_to_host()
-    A.astype(np.uint16).tofile('gpu_original.raw')
-    B.astype(np.uint16).tofile('gpu_result.raw')
-    np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
-    np.sqrt(B+1).astype(np.uint16).tofile('gpu_result_root_plus_one.raw')
+    #A.astype(np.uint16).tofile('gpu_original.raw')
+    #B.astype(np.uint16).tofile('gpu_result.raw')
+    #np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
+    #np.sqrt(B+1).astype(np.uint16).tofile('gpu_result_root_plus_one.raw')
     del A_d
     if multilabel: 
         del reference_array
@@ -157,7 +157,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
     if sqrt_result:
         inplace_sqrt(B)
         B = B.view(np.float32)
-    B.astype(np.uint16).tofile('gpu_result.raw')
+    #B.astype(np.uint16).tofile('gpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
     else:
@@ -166,7 +166,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
     
 def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False):
     
-    A.astype(np.uint16).tofile("edt_cpu_A.raw")
+    #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
         set_num_threads(limit_cpus)
     if scale:
@@ -187,24 +187,24 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
         def erosion_function(array, **kwargs):
             single_pass_erosion(array, **kwargs)
         
-    B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
     #start_time_x = time.monotonic()
     erosion_function(B, closed_border=closed_border, scale=scale[0], axis="x")
     #end_time_x = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     #start_time_y = time.monotonic()
     erosion_function(B, closed_border=closed_border, scale=scale[1], axis="y")
     #end_time_y = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
         erosion_function(B, closed_border=closed_border, sqrt_result=sqrt_result, scale=scale[2], axis="z")
     #end_time_z = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     if sqrt_result:
         B = B.view(np.float32)
-    B.astype(np.uint16).tofile('cpu_result.raw')
+    #B.astype(np.uint16).tofile('cpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
     else:
@@ -256,9 +256,22 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         if minimum_segments:
             segments = max(segments, minimum_segments)
         logging.info(f"using gpu {segments} segments")
-        function = lambda a, b, c, d, e: edt_gpu_split(a, segments, closed_border=b, sqrt_result=c, scale=d, multilabel=e)
+        function = lambda a, closed_border, sqrt_result, scale, multilabel: edt_gpu_split(
+            a, 
+            segments, 
+            closed_border=closed_border, 
+            sqrt_result=sqrt_result, 
+            scale=scale, 
+            multilabel=multilabel
+        )
 
-    return function(A, closed_border, sqrt_result, scale, multilabel)
+    return function(
+        A, 
+        closed_border=closed_border, 
+        sqrt_result=sqrt_result, 
+        scale=scale, 
+        multilabel=multilabel
+    )
 
 
 def run_benchmark(size_override=None, 
