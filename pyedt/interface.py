@@ -98,14 +98,26 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
     if input_2d:
         A = A[..., np.newaxis]
         
-    if scale:
+    if scale or multilabel:
         B = A.astype(np.float32)
-        if len(scale) == 1: scale = scale * 3
-        compilers = (
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0]),
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1]),
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2]),
-            )
+        if not scale:
+            scale = (1,) *3
+        elif len(scale) == 1: 
+            scale = scale * 3
+        if multilabel:
+            reference_array = cuda.to_device(A)
+            compilers = (
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0], multilabel=multilabel),
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1], multilabel=multilabel),
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2], multilabel=multilabel),
+                )
+        else:
+            compilers = (
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0]),
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1]),
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2]),
+                )
+                
     else:
         B = A.copy()
         compilers = (
@@ -150,10 +162,16 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
             ordered_slices[grid_axis_1] = slices[1]
             ordered_slices[grid_axis_2] = slices[2]
             A_d = cuda.to_device(np.ascontiguousarray(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
-            gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d)    
+            if not multilabel:
+                gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d) 
+            else:
+                R_d = cuda.to_device(np.ascontiguousarray(reference_array[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+                gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d, R_d)
             B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = A_d.copy_to_host()
 
     del A_d
+    if multilabel: 
+        del reference_array
     if sqrt_result:
         inplace_sqrt(B)
         B = B.view(np.float32)
@@ -439,7 +457,7 @@ def run_benchmark(size_override=None,
     return results
             
     
-def _auto_decide_method(A):
+def _auto_decide_method(A, multilabel=False):
     if not cuda.is_available():
         return "cpu"
         

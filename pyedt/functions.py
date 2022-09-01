@@ -416,18 +416,29 @@ def single_pass_erosion(array, closed_border, axis, scale=False, sqrt_result=Fal
         columns = h
         
     reference = np.zeros(1, dtype = np.uint32)
-        
     for i in prange(rows):
         for j in range(columns):
             if axis == "x":
+                pr = (i == 38) and (j == 38)
+                #if pr: print(array[:, i, j])
                 secondary_scan(array[:, i, j], closed_border, scale=scale)
+                #if pr: print(array[:, i, j])
                 secondary_scan(array[-1::-1, i, j], closed_border, scale=scale)
+                #if pr: print(array[:, i, j])
             elif axis == "y":
+                pr = (i == 21) and (j == 38)
+                #if pr: print(array[i, :, j])
                 secondary_scan(array[i, :, j], closed_border, scale=scale)
+                #if pr: print(array[i, :, j])
                 secondary_scan(array[i, -1::-1, j], closed_border, scale=scale)
+                #if pr: print(array[i, :, j])
             elif axis == "z":
+                pr = (i == 21) and (j == 38)
+                #if pr: print(array[i, j, :])
                 secondary_scan(array[i, j, :], closed_border, scale=scale)
+                #if pr: print(array[i, j, :])
                 secondary_scan(array[i, j, -1::-1], closed_border, sqrt_result=sqrt_result, scale=scale)
+                #if pr: print(array[i, j, :])
 
 
 @njit(parallel=True, cache=True)
@@ -482,12 +493,19 @@ def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=
 
 
 @njit(cache=True)
-def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
+def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False, pr=False):
     h = arr.shape[0]
     output = arr.copy()
     
     if scale == False:
         scale = 1
+    
+    '''
+    (x1, y1) --> Current anchor
+    (x2, y2) --> Next anchor
+    (x3, __) --> Anchor exchange point
+    (x4, y4) --> Evaluated point
+    '''
     
     if closed_border:
         if arr[0] > 1:
@@ -515,18 +533,20 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
         y4 = arr[i]
         if x4 < x3: # next anchor is not triggered
             #check if next anchor can be changed for current point
-            if y4 < y2: #updates next anchor
+            if y4 <= y2: #updates next anchor
                 x2 = x4 
                 y2 = y4
                 if y2 < y1: 
                     x3 = 0
                 else: 
-                    x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
+                    #x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
+                    x3 = (x1+x2)/2 + (y2 - y1) / (2*(x2-x1))
             else:
-                if y4 < y1: 
+                if y4 <= y1: 
                     candidate_anchor_x = 0
                 else: 
-                    candidate_anchor_x = math.ceil((x1+x4)/2 + (y4 - y1) / (2*(x4-x1)))
+                    #candidate_anchor_x = math.ceil((x1+x4)/2 + (y4 - y1) / (2*(x4-x1)))
+                    candidate_anchor_x = (x1+x4)/2 + (y4 - y1) / (2*(x4-x1))
                 if candidate_anchor_x < x3: #updates next anchor
                     x2 = x4
                     y2 = y4
@@ -543,8 +563,7 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
         if x4 < x3: # keep anchor
             new_val = y1 + ((i*scale)-x1)**2
             if new_val < y4: output[i] = new_val
-            calculated_index = i
-            i += 1
+
         else: #change anchor
             x1 = x2
             y1 = y2
@@ -557,24 +576,27 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
                 if y2 < y1: 
                     x3 = 0
                 else: 
-                    x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1))) 
+                    #x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1))) 
+                    x3 = (x1+x2)/2 + (y2 - y1) / (2*(x2-x1))
                     
-                for i_subscan in range(round(x1/scale) + 2, i + 2):
+                for i_subscan in range(round(x1/scale) + 1, i + 1):
                     if i_subscan >= h: break
                     y = arr[i_subscan]
+                    x = i_subscan * scale
                     if y < y2: #updates next anchor
                         x2 = i_subscan * scale 
                         y2 = y
                         if y2 < y1: 
                             x3 = 0
                         else: 
-                            x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
+                            #x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
+                            x3 = (x1+x2)/2 + (y2 - y1) / (2*(x2-x1))
                     else:
                         if y < y1: 
                             candidate_anchor_x = 0
                         else: 
-                            x = i_subscan * scale
-                            candidate_anchor_x = math.ceil((x+x1)/2 + (y - y1) / (2*(x-x1)))
+                            #candidate_anchor_x = math.ceil((x+x1)/2 + (y - y1) / (2*(x-x1)))
+                            candidate_anchor_x = (x+x1)/2 + (y - y1) / (2*(x-x1))
                         if candidate_anchor_x < x3: #updates next anchor
                             x2 = x
                             y2 = y
@@ -586,9 +608,11 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
                                 x2 = x
                                 y2 = y
                                 x3 = candidate_anchor_x
-            
-            calculated_index = i
-            i += 1
+        #if pr: print(f"({x1}, {y1})  ({x2}, {y2})  ({x3}, __)  ({x4}, {y4})")
+        calculated_index = i
+        i += 1
+        
+        
     if sqrt_result:
         arr[...] = np.sqrt(output).astype(np.float32).view(np.uint32)
     else:
