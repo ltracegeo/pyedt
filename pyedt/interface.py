@@ -75,10 +75,10 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
             gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d, reference_array)
 
     B = A_d.copy_to_host()
-    A.astype(np.uint16).tofile('gpu_original.raw')
-    B.astype(np.uint16).tofile('gpu_result.raw')
-    np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
-    np.sqrt(B+1).astype(np.uint16).tofile('gpu_result_root_plus_one.raw')
+    #A.astype(np.uint16).tofile('gpu_original.raw')
+    #B.astype(np.uint16).tofile('gpu_result.raw')
+    #np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
+    #np.sqrt(B+1).astype(np.uint16).tofile('gpu_result_root_plus_one.raw')
     del A_d
     if multilabel: 
         del reference_array
@@ -98,14 +98,26 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
     if input_2d:
         A = A[..., np.newaxis]
         
-    if scale:
+    if scale or multilabel:
         B = A.astype(np.float32)
-        if len(scale) == 1: scale = scale * 3
-        compilers = (
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0]),
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1]),
-            lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2]),
-            )
+        if not scale:
+            scale = (1,) *3
+        elif len(scale) == 1: 
+            scale = scale * 3
+        if multilabel:
+            reference_array = cuda.to_device(A)
+            compilers = (
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0], multilabel=multilabel),
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1], multilabel=multilabel),
+                lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2], multilabel=multilabel),
+                )
+        else:
+            compilers = (
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=scale[0]),
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=scale[1]),
+                lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=scale[2]),
+                )
+                
     else:
         B = A.copy()
         compilers = (
@@ -150,14 +162,20 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
             ordered_slices[grid_axis_1] = slices[1]
             ordered_slices[grid_axis_2] = slices[2]
             A_d = cuda.to_device(np.ascontiguousarray(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
-            gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d)    
+            if not multilabel:
+                gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d) 
+            else:
+                R_d = cuda.to_device(np.ascontiguousarray(reference_array[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+                gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d, R_d)
             B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = A_d.copy_to_host()
 
     del A_d
+    if multilabel: 
+        del reference_array
     if sqrt_result:
         inplace_sqrt(B)
         B = B.view(np.float32)
-    B.astype(np.uint16).tofile('gpu_result.raw')
+    #B.astype(np.uint16).tofile('gpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
     else:
@@ -166,7 +184,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
     
 def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False):
     
-    A.astype(np.uint16).tofile("edt_cpu_A.raw")
+    #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
         set_num_threads(limit_cpus)
     if scale:
@@ -187,24 +205,24 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
         def erosion_function(array, **kwargs):
             single_pass_erosion(array, **kwargs)
         
-    B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_0.raw")
     #start_time_x = time.monotonic()
     erosion_function(B, closed_border=closed_border, scale=scale[0], axis="x")
     #end_time_x = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_x.raw")
     #start_time_y = time.monotonic()
     erosion_function(B, closed_border=closed_border, scale=scale[1], axis="y")
     #end_time_y = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
         erosion_function(B, closed_border=closed_border, sqrt_result=sqrt_result, scale=scale[2], axis="z")
     #end_time_z = time.monotonic()
-    B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
+    #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
     if sqrt_result:
         B = B.view(np.float32)
-    B.astype(np.uint16).tofile('cpu_result.raw')
+    #B.astype(np.uint16).tofile('cpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
     else:
@@ -256,9 +274,22 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         if minimum_segments:
             segments = max(segments, minimum_segments)
         logging.info(f"using gpu {segments} segments")
-        function = lambda a, b, c, d, e: edt_gpu_split(a, segments, closed_border=b, sqrt_result=c, scale=d, multilabel=e)
+        function = lambda a, closed_border, sqrt_result, scale, multilabel: edt_gpu_split(
+            a, 
+            segments, 
+            closed_border=closed_border, 
+            sqrt_result=sqrt_result, 
+            scale=scale, 
+            multilabel=multilabel
+        )
 
-    return function(A, closed_border, sqrt_result, scale, multilabel)
+    return function(
+        A, 
+        closed_border=closed_border, 
+        sqrt_result=sqrt_result, 
+        scale=scale, 
+        multilabel=multilabel
+    )
 
 
 def run_benchmark(size_override=None, 
@@ -426,14 +457,28 @@ def run_benchmark(size_override=None,
     return results
             
     
-def _auto_decide_method(A):
+def _auto_decide_method(A, multilabel=False):
     if not cuda.is_available():
         return "cpu"
         
     free_memory, total_memory = cuda.current_context().get_memory_info()
     expected_memory_use = (A.size*BYTES_PER_PIXEL + BASE_DEVICE_MEMORY_USE) * MEMORY_TOLERANCE_MARGIN
     
+    gpu = cuda.get_current_device()
+    MAX_GRID_DIM_X = gpu.MAX_GRID_DIM_X
+    MAX_GRID_DIM_Y = gpu.MAX_GRID_DIM_Y
+    MAX_GRID_DIM_Z = gpu.MAX_GRID_DIM_Z
+    MAX_SHARED_MEMORY_PER_BLOCK = gpu.MAX_SHARED_MEMORY_PER_BLOCK
+    
+    max_axis = np.max(A.shape)
+    max_grid = np.max((MAX_GRID_DIM_X, MAX_GRID_DIM_Y, MAX_GRID_DIM_Z))
+    
+    if ((MAX_SHARED_MEMORY_PER_BLOCK < (3 * (max_axis+1) * BYTES_PER_PIXEL * MEMORY_TOLERANCE_MARGIN)) or
+       (max_grid < max_axis)):
+       return "cpu"
+    
     if free_memory > expected_memory_use:
         return "gpu"
         
     return "gpu-split"
+auto_decide_method = _auto_decide_method # fix for pytest

@@ -11,7 +11,7 @@ from numba.typed import Dict
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)
 
-INF = 2**32-1
+INF = 2**31-1
 MAX_STEPS = 10**6
 
 ############################################
@@ -404,6 +404,10 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
 def single_pass_erosion(array, closed_border, axis, scale=False, sqrt_result=False):
 
     w, h, d = array.shape
+    do_print = False
+    print_x = 107
+    print_y = 56
+    print_z = 131
     
     if axis == "x":
         rows = h
@@ -416,18 +420,29 @@ def single_pass_erosion(array, closed_border, axis, scale=False, sqrt_result=Fal
         columns = h
         
     reference = np.zeros(1, dtype = np.uint32)
-        
     for i in prange(rows):
         for j in range(columns):
             if axis == "x":
-                secondary_scan(array[:, i, j], closed_border, scale=scale)
-                secondary_scan(array[-1::-1, i, j], closed_border, scale=scale)
+                pr = (i == print_y) and (j == print_z) and do_print
+                if pr: print(array[:, i, j])
+                secondary_scan(array[:, i, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[:, i, j])
+                secondary_scan(array[-1::-1, i, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[:, i, j])
             elif axis == "y":
-                secondary_scan(array[i, :, j], closed_border, scale=scale)
-                secondary_scan(array[i, -1::-1, j], closed_border, scale=scale)
+                pr = (i == print_x) and (j == print_z) and do_print
+                if pr: print(array[i, :, j])
+                secondary_scan(array[i, :, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, :, j])
+                secondary_scan(array[i, -1::-1, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, :, j])
             elif axis == "z":
-                secondary_scan(array[i, j, :], closed_border, scale=scale)
-                secondary_scan(array[i, j, -1::-1], closed_border, sqrt_result=sqrt_result, scale=scale)
+                pr = (i == print_x) and (j == print_y) and do_print
+                if pr: print(array[i, j, :])
+                secondary_scan(array[i, j, :], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, j, :])
+                secondary_scan(array[i, j, -1::-1], closed_border, sqrt_result=sqrt_result, scale=scale, pr=pr)
+                if pr: print(array[i, j, :])
 
 
 @njit(parallel=True, cache=True)
@@ -480,119 +495,120 @@ def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=
                     secondary_scan(temporary_line[-1::-1], closed_border=closed_border, sqrt_result=sqrt_result, scale=scale)
                     array[slice_z] = where_array_array(reference_line, val, temporary_line, array[slice_z])
 
+@njit(cache=True)
+def get_x3(x1, y1, x2, y2):
+    if y2 > y1:
+        return (x1 + x2)/2 + ((y1 + y2)/2) / ((x2-x1)/(y2-y1))
+    else:
+        return (x1 + x2)/2
 
 @njit(cache=True)
-def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False):
+def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False, pr=False):
     h = arr.shape[0]
     output = arr.copy()
-    
+
     if scale == False:
         scale = 1
     
-    if closed_border:
-        if arr[0] > 1:
-            output[0] = 1
-            x1 = -1
-            y1 = 0
-        else:
-            x1 = 0
-            y1 = arr[0]
-    else:
-        x1 = 0
-        y1 = arr[0]
-        
-    x2 = scale
-    y2 = arr[1]
+    '''
+    (x1, y1) --> Current anchor
+    (x2, y2) --> Next anchor
+    (x3, __) --> Anchor exchange point
+    (x4, y4) --> Evaluated point
+    '''
     
-    if y2 < y1: 
-        x3 = 0
-    else: 
-        x3 = math.ceil((x1*x2)/2 + (y2 - y1) / (2*(x2-x1)))*scale
-    calculated_index = 0
-    i = 1
-    while (calculated_index < h) and (i < h):
-        x4 = i * scale
-        y4 = arr[i]
-        if x4 <= x3: # next anchor is not triggered
-            #check if next anchor can be changed for current point
-            if y4 < y2: #updates next anchor
-                x2 = x4 
-                y2 = y4
-                if y2 < y1: 
-                    x3 = 0
-                else: 
-                    x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
-            else:
-                if y4 < y1: 
-                    candidate_anchor_x = 0
-                else: 
-                    candidate_anchor_x = math.ceil((x1+x4)/2 + (y4 - y1) / (2*(x4-x1)))
-                if candidate_anchor_x < x3: #updates next anchor
-                    x2 = x4
-                    y2 = y4
-                    x3 = candidate_anchor_x
-                elif candidate_anchor_x == x3:
-                    current_anchor_at_x = y2 + (x3-x2)**2
-                    candidate_anchor_at_x = y4 + (x3-x4)**2
-                    if candidate_anchor_at_x < current_anchor_at_x: #updates next anchor
-                        x2 = x4
-                        y2 = y4
-                        x3 = candidate_anchor_x
+    x1 = -scale
+    if closed_border:
+        y1 = 0
+    else:
+        y1 = np.sqrt(INF)
+        
+    x2 = 0
+    y2 = np.sqrt(arr[0])
+    
+    output[0] = min(arr[0], (y1 + scale)**2)
+    if arr[0] < (y1 + scale)**2:
+        output[0] = arr[0]
+    else:
+        output[0] = (y1 + scale)**2
+    if pr: print("i0", output[0], arr[0], y1, scale)
 
-        # must check (x4 <= x3) again, since last update may have changed x3
-        if x4 < x3: # keep anchor
-            new_val = y1 + ((i*scale)-x1)**2
-            if new_val < y4: output[i] = new_val
-            calculated_index = i
-            i += 1
-        else: #change anchor
+    i = 1
+    while (i < h):
+        x3 = get_x3(x1, y1, x2, y2)
+        
+        x4 = i * scale
+        y4 = np.sqrt(arr[i])
+        
+        #if pr: print(f"{i} start: ({x1}, {y1})  ({x2}, {y2})  ({x3}, __)  ({x4}, {y4}) (d: {output[i]})")
+        if pr: print(i,x1,y1,x2,y2,x3,x4,y4,output[i],"\n")
+        
+        if x4 >= x3:
             x1 = x2
             y1 = y2
-            new_val = y1 + ((i*scale)-x1)**2
-            if new_val < y4: output[i] = new_val
-
-            x2 = x1 + scale
-            if round(x2/scale) < h:
-                y2 = arr[round(x2/scale)]
-                if y2 < y1: 
-                    x3 = 0
-                else: 
-                    x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1))) 
-                    
-                for i_subscan in range(round(x1/scale) + 2, i + 2):
-                    if i_subscan >= h: break
-                    y = arr[i_subscan]
-                    if y < y2: #updates next anchor
-                        x2 = i_subscan * scale 
-                        y2 = y
-                        if y2 < y1: 
-                            x3 = 0
-                        else: 
-                            x3 = math.ceil((x1+x2)/2 + (y2 - y1) / (2*(x2-x1)))
-                    else:
-                        if y < y1: 
-                            candidate_anchor_x = 0
-                        else: 
-                            x = i_subscan * scale
-                            candidate_anchor_x = math.ceil((x+x1)/2 + (y - y1) / (2*(x-x1)))
-                        if candidate_anchor_x < x3: #updates next anchor
-                            x2 = x
-                            y2 = y
-                            x3 = candidate_anchor_x
-                        elif candidate_anchor_x == x3:
-                            current_anchor_at_x = y2 + (x3-x2)**2
-                            candidate_anchor_at_x = y + (x3-x)**2
-                            if candidate_anchor_at_x < current_anchor_at_x: #updates next anchor
-                                x2 = x
-                                y2 = y
-                                x3 = candidate_anchor_x
+            i2 = np.int(np.round(x1/scale)+1)
+            x2 = i2 * scale
+            if i2 < h:
+                y2 = np.sqrt(arr[i2])
+            else:
+                y2 = 0
+            x3 = get_x3(x1, y1, x2, y2)
             
-            calculated_index = i
-            i += 1
+            # scan candidate anchors
+            for anchor_i in range(i2, i+1):
+                if anchor_i >= h-1: continue
+                candidate_x = anchor_i * scale
+                candidate_y = np.sqrt(arr[anchor_i])
+                candidate_x3 = get_x3(x1, y1, candidate_x, candidate_y)
+                if pr: print("i: ", anchor_i, candidate_x, candidate_y, candidate_x3,"\n")
+                if candidate_x3 <= x4:
+                    x1 = candidate_x
+                    y1 = candidate_y
+                    x2 = (anchor_i+1) * scale
+                    y2 = np.sqrt(arr[anchor_i+1])
+                    x3 = get_x3(x1, y1, x2, y2)
+                elif candidate_x3 <= x3:
+                    x2 = candidate_x
+                    y2 = candidate_y
+                    x3 = candidate_x3
+                    
+        else:
+            candidate_x = x4
+            candidate_y = y4
+            candidate_x3 = get_x3(x1, y1, candidate_x, candidate_y)
+            if candidate_x3 <= x3:
+                x2 = candidate_x
+                y2 = candidate_y
+                x3 = candidate_x3
+        
+        if y1 > 30000 or (x4 - x1) > 30000:
+            new_distance = INF
+        else:
+            new_distance = np.uint32(np.round(y1**2 + (x4 - x1)**2))
+        
+        if new_distance < output[i]:
+            output[i] = new_distance
+        
+        #if pr: print(f"{i} end:({x1}, {y1})  ({x2}, {y2})  ({x3}, __)  ({x4}, {y4}) (d: {output[i]} / {new_distance})\n")
+        if pr: print(i,x1,y1,x2,y2,x3,x4,y4,output[i],new_distance,"\n")
+        #calculated_index = i
+        i += 1
+        
+    if pr:
+        print("#######\nWrong Values:")
+        wrong_indexes_i, wrong_indexes_j, expected_values, found_values = check_secondary_scan(arr, output, closed_border)
+        for j in range(len(wrong_indexes_i)):
+            print(wrong_indexes_i[j], wrong_indexes_j[j], expected_values[j], found_values[j])
+        print("End wrong values")
+        
     if sqrt_result:
         arr[...] = np.sqrt(output).astype(np.float32).view(np.uint32)
     else:
-        arr[...] = output
+        #if pr: print('\n###\n', arr,'\n', output,'\n####\n\n')
+        for j in range(len(output)):
+            arr[j] = output[j]
+        #arr[...] = output
+    
     
 @njit(parallel=True, cache=True)
 def inplace_sqrt(A):
@@ -644,3 +660,33 @@ def where_array_array(array, com_val, true_array, false_array):
         else: 
             output[i] = false_array[i]
     return output
+    
+@njit(cache=True)
+def check_secondary_scan(input_array, output_array, closed_border=False):
+    wrong_indexes_i = []
+    wrong_indexes_j = []
+    expected_values = []
+    found_values = []
+    
+    for i in range(len(input_array)):
+        lowest_distance_i = i
+        lowest_distance_j = INF
+        if closed_border:
+            lowest_distance = (i+1)**2
+        else:
+            lowest_distance = INF
+        for j in range(i+1):
+            distance = input_array[j] + (i-j)**2
+            if distance < lowest_distance:
+                lowest_distance_i = i
+                lowest_distance_j = j
+                lowest_distance = distance
+        if lowest_distance != output_array[i]:
+            wrong_indexes_i.append(lowest_distance_i)
+            wrong_indexes_j.append(lowest_distance_j)
+            expected_values.append(lowest_distance)
+            found_values.append(output_array[i])
+            
+    return wrong_indexes_i, wrong_indexes_j, expected_values, found_values
+                
+            
