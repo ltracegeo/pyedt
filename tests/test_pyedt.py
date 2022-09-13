@@ -99,6 +99,7 @@ def test_edt_split_gpu_sqrt():
 def test_edt_cpu():
     array = test_image.copy()
     result = edt_cpu(array)
+    save_arrays(reference=simple_result, result=result)
     assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_cpu_scaled():
@@ -272,9 +273,6 @@ def test_square_scale():
     # assert(True)
     
 def test_autodecide():
-    array = np.zeros((EDGE_SIZE, EDGE_SIZE, EDGE_SIZE), dtype=np.uint32)
-    array[EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4,
-          EDGE_SIZE//4:3*EDGE_SIZE//4] = 1
+    array = test_image
     processor = auto_decide_method(array)
     assert(processor in ("cpu", "gpu", "gpu-split"))
