@@ -1,12 +1,10 @@
-import math
-import time
 import logging
-
-from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
-from numba.cuda.cudadrv.driver import CudaAPIError
+import math
 import numpy as np
+import time
 
 from .functions import *
+from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
 
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)
