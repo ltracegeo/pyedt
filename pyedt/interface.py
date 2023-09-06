@@ -187,9 +187,27 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
     #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
         set_num_threads(limit_cpus)
+    mul = 1
     if scale:
         if len(scale) == 1: scale = scale * 3
         B = np.empty(A.shape, dtype=np.float32)
+
+        # Scales too large can cause problems
+        max_ = max(scale)
+        lower_threshold = 100
+        upper_threshold = 1000
+        if max_ > upper_threshold:
+            mul1 = upper_threshold / max_
+            scale = tuple(i * mul1 for i in scale)
+            mul *= mul1
+
+        # Small non-integer scales cause errors because of rounding
+        if any(isinstance(i, float) for i in scale):
+            min_ = min(scale)
+            if min_ < lower_threshold:
+                mul2 = lower_threshold / min_
+                scale = tuple(i*mul2 for i in scale)
+                mul *= mul2
     else:
         scale = (False,) * 3
         B = np.empty(A.shape, dtype=np.uint32)
@@ -216,12 +234,14 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
     #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
-        erosion_function(B, closed_border=closed_border, sqrt_result=sqrt_result, scale=scale[2], axis="z")
+        erosion_function(B, closed_border=closed_border, scale=scale[2], axis="z")
     #end_time_z = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
+    if mul != 1:
+        B /= mul ** 2
     if sqrt_result:
-        B = B.view(np.float32)
+        B = np.sqrt(B)
     #B.astype(np.uint16).tofile('cpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
