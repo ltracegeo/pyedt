@@ -29,26 +29,30 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         A = A[..., np.newaxis]
 
     if scale or multilabel:
-        B = A.astype(np.float32)
-        A_d = cuda.to_device(B)
+        A_reference = A
+        A = _as_float32(A_reference)
+        A_d = cuda.to_device(A)
         if scale == False:
             scale = (1.,) * 3
         elif len(scale) == 1: 
             scale = scale * 3
         if multilabel:
-            reference_array = cuda.to_device(A)
+            reference_array = cuda.to_device(A_reference)
             compilers = (
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=np.float32(scale[0]), multilabel=multilabel),
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=np.float32(scale[1]), multilabel=multilabel),
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=np.float32(scale[2]), multilabel=multilabel),
                 )
         else:
+            del A_reference
             compilers = (
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=np.float32(scale[0])),
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=np.float32(scale[1])),
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=np.float32(scale[2])),
                 )
     else:
+        # Even if A.dtype is uint32, we work on a copy so that we can overwrite the memory later
+        A = _as_uint32(A)
         A_d = cuda.to_device(A)
         compilers = (
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x'),
@@ -74,7 +78,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         else:
             gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d, reference_array)
 
-    B = A_d.copy_to_host()
+    B = A_d.copy_to_host(A)
     #A.astype(np.uint16).tofile('gpu_original.raw')
     #B.astype(np.uint16).tofile('gpu_result.raw')
     #np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
@@ -99,7 +103,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
         A = A[..., np.newaxis]
         
     if scale or multilabel:
-        B = A.astype(np.float32)
+        B = _as_float32(A)
         if not scale:
             scale = (1,) *3
         elif len(scale) == 1: 
@@ -119,7 +123,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
                 )
                 
     else:
-        B = A.copy()
+        B = _as_uint32(A)
         compilers = (
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x'),
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y'),
@@ -161,13 +165,16 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
             ordered_slices[line_axis] = slices[0]
             ordered_slices[grid_axis_1] = slices[1]
             ordered_slices[grid_axis_2] = slices[2]
-            A_d = cuda.to_device(np.ascontiguousarray(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+            contiguous = as_contiguous(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]])
+            A_d = cuda.to_device(contiguous)
             if not multilabel:
                 gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d) 
             else:
-                R_d = cuda.to_device(np.ascontiguousarray(reference_array[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+                R = as_contiguous(A[ordered_slices[0], ordered_slices[1], ordered_slices[2]])
+                R_d = cuda.to_device(R)
                 gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d, R_d)
-            B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = A_d.copy_to_host()
+            A_d.copy_to_host(contiguous)
+            B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = contiguous
 
     del A_d
     if multilabel: 
@@ -238,10 +245,13 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
     #end_time_z = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
+
     if mul != 1:
         B /= mul ** 2
     if sqrt_result:
-        B = np.sqrt(B)
+        inplace_sqrt(B)
+        B = B.view(np.float32)
+
     #B.astype(np.uint16).tofile('cpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
@@ -268,12 +278,41 @@ def _fill_array(A, B):
                         B[i, j] = np.uint32(INF)
                     else:
                         B[i, j] = 0
+
+@njit(parallel=True, cache=True)
+def _as_uint32(A):
+    B = np.empty(A.shape, dtype=np.uint32)
+    if A.ndim == 3:
+        w, h, d = A.shape
+        for i in prange(w):
+            for j in range(h):
+                for k in range(d):
+                    B[i, j, k] = np.uint32(A[i, j, k])
+    else:
+        w, h = A.shape
+        for i in prange(w):
+            for j in range(h):
+                B[i, j] = np.uint32(A[i, j])
+    return B
     
+@njit(parallel=True, cache=True)
+def _as_float32(A):
+    B = np.empty(A.shape, dtype=np.float32)
+    if A.ndim == 3:
+        w, h, d = A.shape
+        for i in prange(w):
+            for j in range(h):
+                for k in range(d):
+                    B[i, j, k] = np.float32(A[i, j, k])
+    else:
+        w, h = A.shape
+        for i in prange(w):
+            for j in range(h):
+                B[i, j] = np.float32(A[i, j])
+    return B
 
 def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
     
-    if A.dtype != np.uint32:
-        A = A.astype(np.uint32)
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
