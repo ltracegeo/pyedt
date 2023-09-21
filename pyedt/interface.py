@@ -189,15 +189,19 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
         return B
     
     
-def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False):
+def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False, buffer=None):
     
     #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
         set_num_threads(limit_cpus)
     mul = 1
+    B = buffer
     if scale:
         if len(scale) == 1: scale = scale * 3
-        B = np.empty(A.shape, dtype=np.float32)
+        if B is None:
+            B = np.empty(A.shape, dtype=np.float32)
+        else:
+            B = B.view(np.float32)
 
         # Scales too large can cause problems
         max_ = max(scale)
@@ -217,7 +221,10 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
                 mul *= mul2
     else:
         scale = (False,) * 3
-        B = np.empty(A.shape, dtype=np.uint32)
+        if B is None:
+            B = np.empty(A.shape, dtype=np.uint32)
+        else:
+            B = B.view(np.uint32)
     _fill_array(A, B)
     input_2d = (B.ndim == 2)
     if input_2d:
@@ -311,7 +318,7 @@ def _as_float32(A):
                 B[i, j] = np.float32(A[i, j])
     return B
 
-def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False, scale=False, multilabel=False, buffer=None):
     
     if force_method == None:
         method = _auto_decide_method(A)
@@ -323,6 +330,14 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
     if method == "cpu":
         logging.info("using cpu")
         function = edt_cpu
+        return function(
+            A, 
+            closed_border=closed_border, 
+            sqrt_result=sqrt_result, 
+            scale=scale, 
+            multilabel=multilabel,
+            buffer=buffer
+        )
     elif method == "gpu":
         logging.info("using gpu")
         function = edt_gpu
