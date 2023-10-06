@@ -5,7 +5,6 @@ import time
 import numpy as np
 
 from numba import cuda, uint16, uint32, float32, njit, prange, get_num_threads, set_num_threads
-from numba.np.ufunc.parallel import _get_thread_id
 from numba.typed import Dict
 
 logger = logging.getLogger("numba")
@@ -611,7 +610,7 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False, pr=
     
     
 @njit(parallel=True, cache=True)
-def inplace_sqrt(A):
+def inplace_sqrt_uint32(A):
     w, h, d = A.shape
     for i in prange(w):
         for j in range(h):
@@ -619,6 +618,32 @@ def inplace_sqrt(A):
                 val = A[i, j, k]
                 val = np.float32(np.sqrt(val))
                 A[i, j, k] = val.view(np.uint32)
+
+@njit(parallel=True, cache=True)
+def inplace_sqrt_float32(A):
+    w, h, d = A.shape
+    for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                A[i, j, k] = np.sqrt(A[i, j, k])
+
+def inplace_sqrt(A):
+    if A.dtype == np.uint32:
+        inplace_sqrt_uint32(A)
+    elif A.dtype == np.float32:
+        inplace_sqrt_float32(A)
+    else:
+        logger.error(f"Array must be of type uint32 or float32, was {A.dtype}")
+
+@njit(parallel=True, cache=True)
+def as_contiguous(A):
+    w, h, d = A.shape
+    B = np.empty_like(A)
+    for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                B[i, j, k] = A[i, j, k]
+    return B
     
 @njit(cache=True)
 def get_label_slices(A):
