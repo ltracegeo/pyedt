@@ -260,10 +260,10 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         raise ValueError(f"force_method must be one of 'cpu', 'gpu' or 'gpu-split', was {force_method}")
         
     if method == "cpu":
-        logging.info("using cpu")
+        #logging.info("using cpu")
         function = edt_cpu
     elif method == "gpu":
-        logging.info("using gpu")
+        #logging.info("using gpu")
         function = edt_gpu
     elif method == "gpu-split":
         free_memory, total_memory = cuda.current_context().get_memory_info()
@@ -271,7 +271,7 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         segments = math.ceil(math.sqrt(expected_memory_use/free_memory))
         if minimum_segments:
             segments = max(segments, minimum_segments)
-        logging.info(f"using gpu {segments} segments")
+        #logging.info(f"using gpu {segments} segments")
         function = lambda a, closed_border, sqrt_result, scale, multilabel: edt_gpu_split(
             a, 
             segments, 
