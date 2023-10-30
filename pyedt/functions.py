@@ -1,11 +1,10 @@
-import math
 import logging
-import time
-
+import math
 import numpy as np
 
-from numba import cuda, uint16, uint32, float32, njit, prange, get_num_threads, set_num_threads
+from numba import cuda, uint32, float32, njit, prange
 from numba.typed import Dict
+
 
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)

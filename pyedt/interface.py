@@ -1,12 +1,10 @@
-import math
-import time
 import logging
-
-from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
-from numba.cuda.cudadrv.driver import CudaAPIError
+import math
 import numpy as np
+import time
 
 from .functions import *
+from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
 
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)
@@ -321,6 +319,17 @@ def run_benchmark(size_override=None,
         edt_loaded = False
     else:
         edt_loaded = other_modules_benchmark
+        
+    try:
+        import cupy as cp
+        # cucim may be installed in windows using 
+        # pip install -e "git+https://github.com/rapidsai/cucim.git@v22.12.00#egg=cucim&subdirectory=python/cucim"
+        from cucim.core.operations import morphology
+    except ModuleNotFoundError as e:
+        print("failed to load cucim", e)
+        cucim_loaded = False
+    else:
+        cucim_loaded = True
 
     results = dict()
     size = 20
@@ -412,6 +421,20 @@ def run_benchmark(size_override=None,
                 results[f"edt_{size}"] = "fail"
             else:
                 results[f"edt_{size}"] = end_time - start_time
+                
+        if cucim_loaded:
+            try:
+                start_time = time.monotonic()
+                AA = cp.array(A)
+                _ = morphology.distance_transform_edt(AA)
+                end_time = time.monotonic()
+                del AA
+                cp._default_memory_pool.free_all_blocks()
+            except Exception as e:
+                print("cucim", size, e)
+                results[f"cucim_{segments}_{size}"] = "fail"
+            else:
+                results[f"cucim_{segments}_{size}"] = end_time - start_time
     
     if plot:
         import matplotlib.pyplot as plt
@@ -430,6 +453,7 @@ def run_benchmark(size_override=None,
         ndimage_names = [i for i in results.keys() if "ndimage" in i]
         sitk_names = [i for i in results.keys() if "sitk" in i]
         edt_names = [i for i in results.keys() if "edt" in i]
+        cucim_names = [i for i in results.keys() if "cucim" in i]
         values = [cpu_names, 
                   cpu_sqrt_names,
                   gpu_names,
@@ -442,7 +466,8 @@ def run_benchmark(size_override=None,
                   gpu_sqrt_split_4_names,
                   ndimage_names, 
                   sitk_names, 
-                  edt_names]
+                  edt_names,
+                  cucim_names]
         values = [i for i in values if len(i) > 0]
         for val in values:
             ax.plot(list(int(i.split("_")[-1]) for i in val if results[i] != "fail"),
