@@ -142,6 +142,83 @@ def test_edt_cpu_2d():
     save_arrays(reference=two_d_result, result=result)
     assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
 
+def test_edt_cpu_sqrt_2d():
+    array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
+    result = edt_cpu(array, sqrt_result=True)
+    assert(np.allclose(result, np.sqrt(two_d_result[...,0]), TOLERANCE))
+
+def test_edt_cpu_scale_2d():
+    array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
+    result = edt_cpu(array, scale=(1, 1))
+    assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
+
+def test_edt_cpu_scale_sqrt_2d():
+    array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
+    result = edt_cpu(array, scale=(1, 1), sqrt_result=True)
+    assert(np.allclose(result, np.sqrt(two_d_result[...,0]), TOLERANCE))
+
+def random_scale(n):
+    base = (np.random.rand() * 100 + 0.001) ** 2
+    return tuple(base * (1 + np.random.rand() * 10) for _ in range(n))
+
+def test_scipy_2d():
+    array = np.random.rand(100, 100) < 0.01
+    array = ndimage.binary_dilation(array, iterations=5)
+    result_scipy = ndimage.distance_transform_edt(array)
+    result_pyedt = edt_cpu(array, sqrt_result=True)
+    assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_3d():
+    array = np.random.rand(100, 100, 100) > 0.001
+    result_scipy = ndimage.distance_transform_edt(array)
+    result_pyedt = edt_cpu(array, sqrt_result=True)
+    assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_scale_2d():
+    array = np.random.rand(100, 100) > 0.01
+    for _ in range(500):
+        scale = random_scale(2)
+        result_scipy = ndimage.distance_transform_edt(array, sampling=scale)
+        result_pyedt = edt_cpu(array, scale=scale, sqrt_result=True)
+        assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_large_scale_2d():
+    array = np.random.rand(100, 100) > 0.01
+    scale = (12.56, 230.3903)
+    result_scipy = ndimage.distance_transform_edt(array, sampling=scale)
+    result_pyedt = edt_cpu(array, scale=scale, sqrt_result=True)
+
+    assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_scale_2d_small():
+    array = np.zeros((3, 3), dtype=bool)
+    array[1,1] = True
+    for _ in range(1000):
+        scale = random_scale(2)
+        print(scale)
+        result_scipy = ndimage.distance_transform_edt(array, sampling=scale)
+        result_pyedt = edt_cpu(array, scale=scale, sqrt_result=True)
+
+        assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_scale_3d():
+    array = np.random.rand(100, 100, 100) > 0.01
+    for _ in range(20):
+        scale = random_scale(3)
+        print(scale)
+        result_scipy = ndimage.distance_transform_edt(array, sampling=scale)
+        result_pyedt = edt_cpu(array, scale=scale, sqrt_result=True)
+        assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
+def test_scipy_scale_3d_int():
+    array = np.random.rand(100, 100, 100) > 0.01
+    for _ in range(20):
+        scale = tuple(np.random.randint(1, 20) for _ in range(3))
+        print(scale)
+        result_scipy = ndimage.distance_transform_edt(array, sampling=scale)
+        result_pyedt = edt_cpu(array, scale=scale, sqrt_result=True)
+        assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
 # Other tests
 def test_edt():
     array = test_image.copy()
