@@ -174,6 +174,15 @@ def test_scipy_3d():
     result_pyedt = edt_cpu(array, sqrt_result=True)
     assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
 
+def test_scipy_3d_buffer():
+    buffer = np.empty((50, 50, 50), dtype=np.uint32)
+    
+    for _ in range(8):
+        array = np.random.rand(50, 50, 50) > 0.001
+        result_scipy = ndimage.distance_transform_edt(array)
+        result_pyedt = edt_cpu(array, sqrt_result=True, buffer=buffer)
+        assert(np.allclose(result_scipy, result_pyedt, TOLERANCE))
+
 def test_scipy_scale_2d():
     array = np.random.rand(100, 100) > 0.01
     for _ in range(500):
