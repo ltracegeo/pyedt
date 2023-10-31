@@ -399,7 +399,7 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
 ### CPU EDT Function steps
 ############################################
 @njit(parallel=True, cache=True)
-def single_pass_erosion(array, closed_border, axis, scale=False, sqrt_result=False):
+def single_pass_erosion(array, closed_border, axis, scale=False):
 
     w, h, d = array.shape
     do_print = False
@@ -439,12 +439,12 @@ def single_pass_erosion(array, closed_border, axis, scale=False, sqrt_result=Fal
                 if pr: print(array[i, j, :])
                 secondary_scan(array[i, j, :], closed_border, scale=scale, pr=pr)
                 if pr: print(array[i, j, :])
-                secondary_scan(array[i, j, -1::-1], closed_border, sqrt_result=sqrt_result, scale=scale, pr=pr)
+                secondary_scan(array[i, j, -1::-1], closed_border, scale=scale, pr=pr)
                 if pr: print(array[i, j, :])
 
 
 @njit(parallel=True, cache=True)
-def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=False, sqrt_result=False):
+def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=False):
 
     w, h, d = array.shape
     
@@ -490,7 +490,7 @@ def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=
                 if axis == "z":
                     temporary_line = where_array_val(reference_line, val, array[slice_z], np.uint32(0))
                     secondary_scan(temporary_line, closed_border=closed_border, scale=scale)
-                    secondary_scan(temporary_line[-1::-1], closed_border=closed_border, sqrt_result=sqrt_result, scale=scale)
+                    secondary_scan(temporary_line[-1::-1], closed_border=closed_border, scale=scale)
                     array[slice_z] = where_array_array(reference_line, val, temporary_line, array[slice_z])
 
 @njit(cache=True)
@@ -501,7 +501,7 @@ def get_x3(x1, y1, x2, y2):
         return (x1 + x2)/2
 
 @njit(cache=True)
-def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False, pr=False):
+def secondary_scan(arr, closed_border=False, scale=False, pr=False):
     h = arr.shape[0]
     output = arr.copy()
 
@@ -599,17 +599,11 @@ def secondary_scan(arr, closed_border=False, sqrt_result=False, scale=False, pr=
             print(wrong_indexes_i[j], wrong_indexes_j[j], expected_values[j], found_values[j])
         print("End wrong values")
         
-    if sqrt_result:
-        arr[...] = np.sqrt(output).astype(np.float32).view(np.uint32)
-    else:
-        #if pr: print('\n###\n', arr,'\n', output,'\n####\n\n')
-        for j in range(len(output)):
-            arr[j] = output[j]
-        #arr[...] = output
+    arr[...] = output
     
     
 @njit(parallel=True, cache=True)
-def inplace_sqrt(A):
+def inplace_sqrt_uint32(A):
     w, h, d = A.shape
     for i in prange(w):
         for j in range(h):
@@ -617,6 +611,32 @@ def inplace_sqrt(A):
                 val = A[i, j, k]
                 val = np.float32(np.sqrt(val))
                 A[i, j, k] = val.view(np.uint32)
+
+@njit(parallel=True, cache=True)
+def inplace_sqrt_float32(A):
+    w, h, d = A.shape
+    for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                A[i, j, k] = np.sqrt(A[i, j, k])
+
+def inplace_sqrt(A):
+    if A.dtype == np.uint32:
+        inplace_sqrt_uint32(A)
+    elif A.dtype == np.float32:
+        inplace_sqrt_float32(A)
+    else:
+        logger.error(f"Array must be of type uint32 or float32, was {A.dtype}")
+
+@njit(parallel=True, cache=True)
+def as_contiguous(A):
+    w, h, d = A.shape
+    B = np.empty_like(A)
+    for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                B[i, j, k] = A[i, j, k]
+    return B
     
 @njit(cache=True)
 def get_label_slices(A):

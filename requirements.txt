@@ -1,4 +1,4 @@
-setuptools==59.2.0
+setuptools==59.8.0
 matplotlib==3.6.2
 numba==0.56.2
 numpy==1.23.1
