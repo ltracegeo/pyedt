@@ -1,5 +1,5 @@
 setuptools==59.8.0
-matplotlib==3.6.2
+matplotlib==3.5.1
 numba==0.56.2
 numpy==1.23.1
 scipy==1.8.1
