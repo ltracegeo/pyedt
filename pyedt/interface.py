@@ -263,6 +263,50 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
     else:
         return B
 
+@njit
+def jit_edt_cpu(
+    A, 
+    closed_border=False, 
+    sqrt_result=False, 
+    limit_cpus=0, 
+    scale=(1.0, 1.0, 1.0),
+    ):
+    
+    if limit_cpus > 0:
+        set_num_threads(limit_cpus)
+    mul = 1
+    B = np.empty(A.shape, dtype=np.float32)
+
+    # Scales too large can cause problems
+    max_ = max(scale)
+    lower_threshold = 100
+    upper_threshold = 1000
+    if max_ > upper_threshold:
+        mul1 = upper_threshold / max_
+        scale = (scale[0]*mul1, scale[1]*mul1, scale[2]*mul1)
+        mul *= mul1
+
+    # Small non-integer scales cause errors because of rounding
+    min_ = min(scale)
+    if min_ < lower_threshold:
+        mul2 = lower_threshold / min_
+        scale = (scale[0]*mul2, scale[1]*mul2, scale[2]*mul2)
+        mul *= mul2
+
+    _fill_array(A, B)
+        
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[0], axis="x")
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[1], axis="y")
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[2], axis="z")
+
+    if mul != 1:
+        B /= mul ** 2
+    if sqrt_result:
+        inplace_sqrt_float32_serial(B)
+        B = B.view(np.float32)
+
+    else:
+        return B
 
 @njit(parallel=True)
 def _fill_array(A, B):

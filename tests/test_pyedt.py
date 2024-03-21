@@ -3,6 +3,8 @@ import pathlib
 import numpy as np
 from scipy import ndimage
 
+from numba import njit
+
 from pyedt.interface import *
 
 test_image = np.fromfile(pathlib.Path(__file__).parent/"test_array.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
@@ -122,6 +124,15 @@ def test_edt_cpu_sqrt():
     array = test_image.copy()
     result = edt_cpu(array, sqrt_result=True)
     assert(np.allclose(result, sqrt_result, TOLERANCE))
+
+def test_edt_cpu_jit():
+    array = test_image.copy()
+    @njit
+    def jit_call():
+        return jit_edt_cpu(array)
+    result = jit_call()
+    save_arrays(reference=simple_result, result=result)
+    assert(np.allclose(result, simple_result, TOLERANCE))   
 
 # Test 2D
 def test_edt_gpu_2d():
