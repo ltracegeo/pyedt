@@ -305,8 +305,7 @@ def jit_edt_cpu(
         inplace_sqrt_float32_serial(B)
         B = B.view(np.float32)
 
-    else:
-        return B
+    return B
 
 @njit(parallel=True)
 def _fill_array(A, B):
