@@ -48,22 +48,22 @@ def save_many(arrays_dict):
 # GPU test
 def test_edt_gpu():
     array = test_image.copy()
-    result = edt_gpu(array)
+    result = edt_gpu(array, sqrt_result=False)
     assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_gpu_scaled():
     array = test_image.copy()
-    result = edt_gpu(array, scale=(1.2, 2.4, 3.6))
+    result = edt_gpu(array, scale=(1.2, 2.4, 3.6), sqrt_result=False)
     assert(np.allclose(result, scale_result, TOLERANCE))
     
 def test_edt_gpu_multilabel():
     array = test_image.copy()
-    result = edt_gpu(array, multilabel=True)
+    result = edt_gpu(array, multilabel=True, sqrt_result=False)
     assert(np.allclose(result, multilabel_result, TOLERANCE))
 
 def test_edt_gpu_border():
     array = test_image.copy()
-    result = edt_gpu(array, closed_border=True)
+    result = edt_gpu(array, closed_border=True, sqrt_result=False)
     assert(np.allclose(result, border_result, TOLERANCE))
     
 def test_edt_gpu_sqrt():
@@ -74,22 +74,22 @@ def test_edt_gpu_sqrt():
 # GPU split test
 def test_edt_split_gpu():
     array = test_image.copy()
-    result = edt_gpu_split(array, 2)
+    result = edt_gpu_split(array, 2, sqrt_result=False)
     assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_split_gpu_scaled():
     array = test_image.copy()
-    result = edt_gpu_split(array, 2, scale=(1.2, 2.4, 3.6))
+    result = edt_gpu_split(array, 2, scale=(1.2, 2.4, 3.6), sqrt_result=False)
     assert(np.allclose(result, scale_result, TOLERANCE))
     
 def test_edt_split_gpu_multilabel():
     array = test_image.copy()
-    result = edt_gpu_split(array, 2, multilabel=True)
+    result = edt_gpu_split(array, 2, multilabel=True, sqrt_result=False)
     assert(np.allclose(result, multilabel_result, TOLERANCE))
 
 def test_edt_split_gpu_border():
     array = test_image.copy()
-    result = edt_gpu_split(array, 2, closed_border=True)
+    result = edt_gpu_split(array, 2, closed_border=True, sqrt_result=False)
     assert(np.allclose(result, border_result, TOLERANCE))
     
 def test_edt_split_gpu_sqrt():
@@ -100,24 +100,24 @@ def test_edt_split_gpu_sqrt():
 # CPU test    
 def test_edt_cpu():
     array = test_image.copy()
-    result = edt_cpu(array)
+    result = edt_cpu(array, sqrt_result=False)
     save_arrays(reference=simple_result, result=result)
     assert(np.allclose(result, simple_result, TOLERANCE))   
     
 def test_edt_cpu_scaled():
     array = test_image.copy()
-    result = edt_cpu(array, scale=(1.2, 2.4, 3.6))
+    result = edt_cpu(array, scale=(1.2, 2.4, 3.6), sqrt_result=False)
     save_arrays(reference=scale_result, result=result)
     assert(np.allclose(result, scale_result, 0.5))
     
 def test_edt_cpu_multilabel():
     array = test_image.copy()
-    result = edt_cpu(array, multilabel=True)
+    result = edt_cpu(array, multilabel=True, sqrt_result=False)
     assert(np.allclose(result, multilabel_result, TOLERANCE))
 
 def test_edt_cpu_border():
     array = test_image.copy()
-    result = edt_cpu(array, closed_border=True)
+    result = edt_cpu(array, closed_border=True, sqrt_result=False)
     assert(np.allclose(result, border_result, TOLERANCE))
     
 def test_edt_cpu_sqrt():
@@ -129,7 +129,7 @@ def test_edt_cpu_jit():
     array = test_image.copy()
     @njit
     def jit_call():
-        return jit_edt_cpu(array)
+        return jit_edt_cpu(array, sqrt_result=False)
     result = jit_call()
     save_arrays(reference=simple_result, result=result)
     assert(np.allclose(result, simple_result, TOLERANCE))   
@@ -137,19 +137,19 @@ def test_edt_cpu_jit():
 # Test 2D
 def test_edt_gpu_2d():
     array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
-    result = edt_gpu(array)
+    result = edt_gpu(array, sqrt_result=False)
     save_arrays(reference=two_d_result, result=result)
     assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
 
 def test_edt_gpu_split_2d():
     array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
-    result = edt_gpu_split(array, 2)
+    result = edt_gpu_split(array, 2, sqrt_result=False)
     save_arrays(reference=two_d_result, result=result)
     assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
     
 def test_edt_cpu_2d():
     array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
-    result = edt_cpu(array)
+    result = edt_cpu(array, sqrt_result=False)
     save_arrays(reference=two_d_result, result=result)
     assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
 
@@ -160,7 +160,7 @@ def test_edt_cpu_sqrt_2d():
 
 def test_edt_cpu_scale_2d():
     array = np.ascontiguousarray(test_image.copy()[: , :, test_image.shape[2]//2])
-    result = edt_cpu(array, scale=(1, 1))
+    result = edt_cpu(array, scale=(1, 1), sqrt_result=False)
     assert(np.allclose(result, two_d_result[...,0], TOLERANCE))
 
 def test_edt_cpu_scale_sqrt_2d():
@@ -283,17 +283,17 @@ for i in range(1, 50):
     sub_B[sub_B >= 1] = i
 
 def test_random():
-    result_gpu = edt(A, force_method='gpu')
-    result_cpu = edt(A, force_method='cpu')
-    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3)
+    result_gpu = edt(A, force_method='gpu', sqrt_result=False)
+    result_cpu = edt(A, force_method='cpu', sqrt_result=False)
+    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
 
 def test_square():
-    result_gpu = edt(B, force_method='gpu')
-    result_cpu = edt(B, force_method='cpu')
-    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3)
+    result_gpu = edt(B, force_method='gpu', sqrt_result=False)
+    result_cpu = edt(B, force_method='cpu', sqrt_result=False)
+    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
@@ -315,49 +315,49 @@ def test_square_sqrt():
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
 
 def test_random_multilabel():    
-    result_gpu = edt(A, force_method='gpu', multilabel=True)
-    result_cpu = edt(A, force_method='cpu', multilabel=True)
-    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, multilabel=True)
+    result_gpu = edt(A, force_method='gpu', multilabel=True, sqrt_result=False)
+    result_cpu = edt(A, force_method='cpu', multilabel=True, sqrt_result=False)
+    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, multilabel=True, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
            
 def test_square_multilabel():    
-    result_gpu = edt(B, force_method='gpu', multilabel=True)
-    result_cpu = edt(B, force_method='cpu', multilabel=True)
-    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, multilabel=True)
+    result_gpu = edt(B, force_method='gpu', multilabel=True, sqrt_result=False)
+    result_cpu = edt(B, force_method='cpu', multilabel=True, sqrt_result=False)
+    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, multilabel=True, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
 
 def test_random_border():    
-    result_gpu = edt(A, force_method='gpu', closed_border=True)
-    result_cpu = edt(A, force_method='cpu', closed_border=True)
-    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, closed_border=True)
+    result_gpu = edt(A, force_method='gpu', closed_border=True, sqrt_result=False)
+    result_cpu = edt(A, force_method='cpu', closed_border=True, sqrt_result=False)
+    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, closed_border=True, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
            
 def test_square_border():    
-    result_gpu = edt(B, force_method='gpu', closed_border=True)
-    result_cpu = edt(B, force_method='cpu', closed_border=True)
-    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, closed_border=True)
+    result_gpu = edt(B, force_method='gpu', closed_border=True, sqrt_result=False)
+    result_cpu = edt(B, force_method='cpu', closed_border=True, sqrt_result=False)
+    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, closed_border=True, sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, TOLERANCE) and
            np.allclose(result_gpu, result_gpu_split, TOLERANCE))
 
 def test_random_scale():    
-    result_gpu = edt(A, force_method='gpu', scale=(1.2, 2.4, 3.6))
-    result_cpu = edt(A, force_method='cpu', scale=(1.2, 2.4, 3.6))
-    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, scale=(1.2, 2.4, 3.6))
+    result_gpu = edt(A, force_method='gpu', scale=(1.2, 2.4, 3.6), sqrt_result=False)
+    result_cpu = edt(A, force_method='cpu', scale=(1.2, 2.4, 3.6), sqrt_result=False)
+    result_gpu_split = edt(A, force_method='gpu-split', minimum_segments=3, scale=(1.2, 2.4, 3.6), sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, 0.5) and
            np.allclose(result_gpu, result_gpu_split, 0.5))
            
 def test_square_scale():    
-    result_gpu = edt(B, force_method='gpu', scale=(1.2, 2.4, 3.6))
-    result_cpu = edt(B, force_method='cpu', scale=(1.2, 2.4, 3.6))
-    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, scale=(1.2, 2.4, 3.6))
+    result_gpu = edt(B, force_method='gpu', scale=(1.2, 2.4, 3.6), sqrt_result=False)
+    result_cpu = edt(B, force_method='cpu', scale=(1.2, 2.4, 3.6), sqrt_result=False)
+    result_gpu_split = edt(B, force_method='gpu-split', minimum_segments=3, scale=(1.2, 2.4, 3.6), sqrt_result=False)
     save_many({'gpu': result_gpu, 'cpu': result_cpu, 'gpu-split': result_gpu_split})
     assert(np.allclose(result_gpu, result_cpu, 0.5) and
            np.allclose(result_gpu, result_gpu_split, 0.5))

@@ -15,7 +15,7 @@ MEMORY_TOLERANCE_MARGIN = 1.1
 MIN_SIZE_FOR_GPU = 1000000000
 
 
-def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+def edt_gpu(A, closed_border=False, sqrt_result=True, scale=False, multilabel=False):
     
     if scale:
         if type(scale) is not tuple:
@@ -93,7 +93,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         return B
 
 
-def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+def edt_gpu_split(A, segments, closed_border=False, sqrt_result=True, scale=False, multilabel=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     input_2d = (A.ndim == 2)
@@ -187,7 +187,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
         return B
     
     
-def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False, buffer=None):
+def edt_cpu(A, closed_border=False, sqrt_result=True, limit_cpus=None, scale=False, multilabel=False, buffer=None):
     
     #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
@@ -267,7 +267,7 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
 def jit_edt_cpu(
     A, 
     closed_border=False, 
-    sqrt_result=False, 
+    sqrt_result=True, 
     limit_cpus=0, 
     scale=(1.0, 1.0, 1.0),
     ):
@@ -359,7 +359,7 @@ def _as_float32(A):
                 B[i, j] = np.float32(A[i, j])
     return B
 
-def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False, scale=False, multilabel=False, buffer=None):
+def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=True, scale=False, multilabel=False, buffer=None):
     
     if force_method == None:
         method = _auto_decide_method(A)
@@ -468,7 +468,7 @@ def run_benchmark(size_override=None,
         for method in ('cpu', 'gpu'):
             try:
                 start_time = time.monotonic()
-                _ = edt(A, force_method=method)
+                _ = edt(A, force_method=method, sqrt_result=False)
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info(method, size, e)
@@ -488,7 +488,7 @@ def run_benchmark(size_override=None,
         for segments in gpu_split_segments:
             try:
                 start_time = time.monotonic()
-                _ = edt(A, force_method="gpu-split", minimum_segments = segments)
+                _ = edt(A, force_method="gpu-split", minimum_segments=segments, sqrt_result=False)
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info("gpu-split", size, e)
