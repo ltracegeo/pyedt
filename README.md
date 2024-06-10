@@ -1,4 +1,4 @@
-[![](https://badge.fury.io/py/pyedt.svg)]([https://pypi.python.org/pypi/openpnm](https://pypi.python.org/pypi/pyedt))
+[![](https://badge.fury.io/py/pyedt.svg)](https://pypi.python.org/pypi/pyedt)
 
 # pyedt
 Python Euclidian distance transform with numba and cuda
