@@ -1,3 +1,5 @@
+[![](https://badge.fury.io/py/pyedt.svg)](https://pypi.python.org/pypi/pyedt)
+
 # pyedt
 Python Euclidian distance transform with numba and cuda
 
