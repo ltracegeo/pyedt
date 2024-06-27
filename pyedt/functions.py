@@ -442,6 +442,50 @@ def single_pass_erosion(array, closed_border, axis, scale=False):
                 secondary_scan(array[i, j, -1::-1], closed_border, scale=scale, pr=pr)
                 if pr: print(array[i, j, :])
 
+@njit(parallel=False, cache=True)
+def single_pass_erosion_serial(array, closed_border, axis, scale=False):
+
+    w, h, d = array.shape
+    do_print = False
+    print_x = 107
+    print_y = 56
+    print_z = 131
+    
+    if axis == "x":
+        rows = h
+        columns = d
+    elif axis == "y":
+        rows = w
+        columns = d
+    elif axis == "z":
+        rows = w
+        columns = h
+        
+    reference = np.zeros(1, dtype = np.uint32)
+    for i in prange(rows):
+        for j in range(columns):
+            if axis == "x":
+                pr = (i == print_y) and (j == print_z) and do_print
+                if pr: print(array[:, i, j])
+                secondary_scan(array[:, i, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[:, i, j])
+                secondary_scan(array[-1::-1, i, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[:, i, j])
+            elif axis == "y":
+                pr = (i == print_x) and (j == print_z) and do_print
+                if pr: print(array[i, :, j])
+                secondary_scan(array[i, :, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, :, j])
+                secondary_scan(array[i, -1::-1, j], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, :, j])
+            elif axis == "z":
+                pr = (i == print_x) and (j == print_y) and do_print
+                if pr: print(array[i, j, :])
+                secondary_scan(array[i, j, :], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, j, :])
+                secondary_scan(array[i, j, -1::-1], closed_border, scale=scale, pr=pr)
+                if pr: print(array[i, j, :])
+
 
 @njit(parallel=True, cache=True)
 def single_pass_erosion_multilabel(array, reference, closed_border, axis, scale=False):
@@ -544,7 +588,7 @@ def secondary_scan(arr, closed_border=False, scale=False, pr=False):
         if x4 >= x3:
             x1 = x2
             y1 = y2
-            i2 = np.int(np.round(x1/scale)+1)
+            i2 = int(np.round(x1/scale)+1)
             x2 = i2 * scale
             if i2 < h:
                 y2 = np.sqrt(arr[i2])
@@ -616,6 +660,14 @@ def inplace_sqrt_uint32(A):
 def inplace_sqrt_float32(A):
     w, h, d = A.shape
     for i in prange(w):
+        for j in range(h):
+            for k in range(d):
+                A[i, j, k] = np.sqrt(A[i, j, k])
+
+@njit(cache=True)
+def inplace_sqrt_float32_serial(A):
+    w, h, d = A.shape
+    for i in range(w):
         for j in range(h):
             for k in range(d):
                 A[i, j, k] = np.sqrt(A[i, j, k])
