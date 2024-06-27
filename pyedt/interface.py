@@ -1,12 +1,10 @@
-import math
-import time
 import logging
-
-from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
-from numba.cuda.cudadrv.driver import CudaAPIError
+import math
 import numpy as np
+import time
 
 from .functions import *
+from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
 
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)
@@ -17,7 +15,7 @@ MEMORY_TOLERANCE_MARGIN = 1.1
 MIN_SIZE_FOR_GPU = 1000000000
 
 
-def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+def edt_gpu(A, closed_border=False, sqrt_result=True, scale=False, multilabel=False):
     
     if scale:
         if type(scale) is not tuple:
@@ -29,26 +27,30 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         A = A[..., np.newaxis]
 
     if scale or multilabel:
-        B = A.astype(np.float32)
-        A_d = cuda.to_device(B)
+        A_reference = A
+        A = _as_float32(A_reference)
+        A_d = cuda.to_device(A)
         if scale == False:
             scale = (1.,) * 3
         elif len(scale) == 1: 
             scale = scale * 3
         if multilabel:
-            reference_array = cuda.to_device(A)
+            reference_array = cuda.to_device(A_reference)
             compilers = (
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=np.float32(scale[0]), multilabel=multilabel),
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=np.float32(scale[1]), multilabel=multilabel),
                 lambda line_length, voxels_per_thread: compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=np.float32(scale[2]), multilabel=multilabel),
                 )
         else:
+            del A_reference
             compilers = (
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='x', scale=np.float32(scale[0])),
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='y', scale=np.float32(scale[1])),
                 lambda line_length, voxels_per_thread: compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis='z', scale=np.float32(scale[2])),
                 )
     else:
+        # Even if A.dtype is uint32, we work on a copy so that we can overwrite the memory later
+        A = _as_uint32(A)
         A_d = cuda.to_device(A)
         compilers = (
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x'),
@@ -74,7 +76,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         else:
             gedt[(grid_dim_1, grid_dim_2), threads_per_block](A_d, reference_array)
 
-    B = A_d.copy_to_host()
+    B = A_d.copy_to_host(A)
     #A.astype(np.uint16).tofile('gpu_original.raw')
     #B.astype(np.uint16).tofile('gpu_result.raw')
     #np.sqrt(B).astype(np.uint16).tofile('gpu_result_root.raw')
@@ -91,7 +93,7 @@ def edt_gpu(A, closed_border=False, sqrt_result=False, scale=False, multilabel=F
         return B
 
 
-def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+def edt_gpu_split(A, segments, closed_border=False, sqrt_result=True, scale=False, multilabel=False):
     gpu = cuda.get_current_device()
     max_threads_per_block = gpu.MAX_THREADS_PER_BLOCK
     input_2d = (A.ndim == 2)
@@ -99,7 +101,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
         A = A[..., np.newaxis]
         
     if scale or multilabel:
-        B = A.astype(np.float32)
+        B = _as_float32(A)
         if not scale:
             scale = (1,) *3
         elif len(scale) == 1: 
@@ -119,7 +121,7 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
                 )
                 
     else:
-        B = A.copy()
+        B = _as_uint32(A)
         compilers = (
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='x'),
             lambda line_length, voxels_per_thread: compile_gedt(line_length, voxels_per_thread, closed_border, axis='y'),
@@ -161,13 +163,16 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
             ordered_slices[line_axis] = slices[0]
             ordered_slices[grid_axis_1] = slices[1]
             ordered_slices[grid_axis_2] = slices[2]
-            A_d = cuda.to_device(np.ascontiguousarray(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+            contiguous = as_contiguous(B[ordered_slices[0], ordered_slices[1], ordered_slices[2]])
+            A_d = cuda.to_device(contiguous)
             if not multilabel:
                 gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d) 
             else:
-                R_d = cuda.to_device(np.ascontiguousarray(reference_array[ordered_slices[0], ordered_slices[1], ordered_slices[2]]))
+                R = as_contiguous(A[ordered_slices[0], ordered_slices[1], ordered_slices[2]])
+                R_d = cuda.to_device(R)
                 gedt[(slices[1].stop - slices[1].start, slices[2].stop - slices[2].start), threads_per_block](A_d, R_d)
-            B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = A_d.copy_to_host()
+            A_d.copy_to_host(contiguous)
+            B[ordered_slices[0], ordered_slices[1], ordered_slices[2]] = contiguous
 
     del A_d
     if multilabel: 
@@ -182,17 +187,42 @@ def edt_gpu_split(A, segments, closed_border=False, sqrt_result=False, scale=Fal
         return B
     
     
-def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=False, multilabel=False):
+def edt_cpu(A, closed_border=False, sqrt_result=True, limit_cpus=None, scale=False, multilabel=False, buffer=None):
     
     #A.astype(np.uint16).tofile("edt_cpu_A.raw")
     if limit_cpus:
         set_num_threads(limit_cpus)
+    mul = 1
+    B = buffer
     if scale:
         if len(scale) == 1: scale = scale * 3
-        B = np.empty(A.shape, dtype=np.float32)
+        if B is None:
+            B = np.empty(A.shape, dtype=np.float32)
+        else:
+            B = B.view(np.float32)
+
+        # Scales too large can cause problems
+        max_ = max(scale)
+        lower_threshold = 100
+        upper_threshold = 1000
+        if max_ > upper_threshold:
+            mul1 = upper_threshold / max_
+            scale = tuple(i * mul1 for i in scale)
+            mul *= mul1
+
+        # Small non-integer scales cause errors because of rounding
+        if any(isinstance(i, float) for i in scale):
+            min_ = min(scale)
+            if min_ < lower_threshold:
+                mul2 = lower_threshold / min_
+                scale = tuple(i*mul2 for i in scale)
+                mul *= mul2
     else:
         scale = (False,) * 3
-        B = np.empty(A.shape, dtype=np.uint32)
+        if B is None:
+            B = np.empty(A.shape, dtype=np.uint32)
+        else:
+            B = B.view(np.uint32)
     _fill_array(A, B)
     input_2d = (B.ndim == 2)
     if input_2d:
@@ -216,18 +246,66 @@ def edt_cpu(A, closed_border=False, sqrt_result=False, limit_cpus=None, scale=Fa
     #B.astype(np.uint16).tofile("edt_cpu_pass_y.raw")
     #start_time_z = time.monotonic()
     if B.shape[2] > 1:
-        erosion_function(B, closed_border=closed_border, sqrt_result=sqrt_result, scale=scale[2], axis="z")
+        erosion_function(B, closed_border=closed_border, scale=scale[2], axis="z")
     #end_time_z = time.monotonic()
     #B.astype(np.uint16).tofile("edt_cpu_pass_z.raw")
     #print(f"step times: {end_time_x - start_time_x}, {end_time_y - start_time_y}, {end_time_z - start_time_z}, total: {end_time_x - start_time_x + end_time_y - start_time_y + end_time_z - start_time_z}")
+
+    if mul != 1:
+        B /= mul ** 2
     if sqrt_result:
+        inplace_sqrt(B)
         B = B.view(np.float32)
+
     #B.astype(np.uint16).tofile('cpu_result.raw')
     if  input_2d:
         return B[:, :, 0]
     else:
         return B
 
+@njit
+def jit_edt_cpu(
+    A, 
+    closed_border=False, 
+    sqrt_result=True, 
+    limit_cpus=0, 
+    scale=(1.0, 1.0, 1.0),
+    ):
+    
+    if limit_cpus > 0:
+        set_num_threads(limit_cpus)
+    mul = 1
+    B = np.empty(A.shape, dtype=np.float32)
+
+    # Scales too large can cause problems
+    max_ = max(scale)
+    lower_threshold = 100
+    upper_threshold = 1000
+    if max_ > upper_threshold:
+        mul1 = upper_threshold / max_
+        scale = (scale[0]*mul1, scale[1]*mul1, scale[2]*mul1)
+        mul *= mul1
+
+    # Small non-integer scales cause errors because of rounding
+    min_ = min(scale)
+    if min_ < lower_threshold:
+        mul2 = lower_threshold / min_
+        scale = (scale[0]*mul2, scale[1]*mul2, scale[2]*mul2)
+        mul *= mul2
+
+    _fill_array(A, B)
+        
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[0], axis="x")
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[1], axis="y")
+    single_pass_erosion_serial(B, closed_border=closed_border, scale=scale[2], axis="z")
+
+    if mul != 1:
+        B /= mul ** 2
+    if sqrt_result:
+        inplace_sqrt_float32_serial(B)
+        B = B.view(np.float32)
+
+    return B
 
 @njit(parallel=True)
 def _fill_array(A, B):
@@ -248,12 +326,41 @@ def _fill_array(A, B):
                         B[i, j] = np.uint32(INF)
                     else:
                         B[i, j] = 0
-    
 
-def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=False, scale=False, multilabel=False):
+@njit(parallel=True, cache=True)
+def _as_uint32(A):
+    B = np.empty(A.shape, dtype=np.uint32)
+    if A.ndim == 3:
+        w, h, d = A.shape
+        for i in prange(w):
+            for j in range(h):
+                for k in range(d):
+                    B[i, j, k] = np.uint32(A[i, j, k])
+    else:
+        w, h = A.shape
+        for i in prange(w):
+            for j in range(h):
+                B[i, j] = np.uint32(A[i, j])
+    return B
     
-    if A.dtype != np.uint32:
-        A = A.astype(np.uint32)
+@njit(parallel=True, cache=True)
+def _as_float32(A):
+    B = np.empty(A.shape, dtype=np.float32)
+    if A.ndim == 3:
+        w, h, d = A.shape
+        for i in prange(w):
+            for j in range(h):
+                for k in range(d):
+                    B[i, j, k] = np.float32(A[i, j, k])
+    else:
+        w, h = A.shape
+        for i in prange(w):
+            for j in range(h):
+                B[i, j] = np.float32(A[i, j])
+    return B
+
+def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_result=True, scale=False, multilabel=False, buffer=None):
+    
     if force_method == None:
         method = _auto_decide_method(A)
     elif force_method in ('cpu', 'gpu', 'gpu-split'):
@@ -262,10 +369,18 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         raise ValueError(f"force_method must be one of 'cpu', 'gpu' or 'gpu-split', was {force_method}")
         
     if method == "cpu":
-        logging.info("using cpu")
+        #logging.info("using cpu")
         function = edt_cpu
+        return function(
+            A, 
+            closed_border=closed_border, 
+            sqrt_result=sqrt_result, 
+            scale=scale, 
+            multilabel=multilabel,
+            buffer=buffer
+        )
     elif method == "gpu":
-        logging.info("using gpu")
+        #logging.info("using gpu")
         function = edt_gpu
     elif method == "gpu-split":
         free_memory, total_memory = cuda.current_context().get_memory_info()
@@ -273,7 +388,7 @@ def edt(A, force_method=None, minimum_segments=3, closed_border=False, sqrt_resu
         segments = math.ceil(math.sqrt(expected_memory_use/free_memory))
         if minimum_segments:
             segments = max(segments, minimum_segments)
-        logging.info(f"using gpu {segments} segments")
+        #logging.info(f"using gpu {segments} segments")
         function = lambda a, closed_border, sqrt_result, scale, multilabel: edt_gpu_split(
             a, 
             segments, 
@@ -321,6 +436,17 @@ def run_benchmark(size_override=None,
         edt_loaded = False
     else:
         edt_loaded = other_modules_benchmark
+        
+    try:
+        import cupy as cp
+        # cucim may be installed in windows using 
+        # pip install -e "git+https://github.com/rapidsai/cucim.git@v22.12.00#egg=cucim&subdirectory=python/cucim"
+        from cucim.core.operations import morphology
+    except ModuleNotFoundError as e:
+        print("failed to load cucim", e)
+        cucim_loaded = False
+    else:
+        cucim_loaded = True
 
     results = dict()
     size = 20
@@ -342,7 +468,7 @@ def run_benchmark(size_override=None,
         for method in ('cpu', 'gpu'):
             try:
                 start_time = time.monotonic()
-                _ = edt(A, force_method=method)
+                _ = edt(A, force_method=method, sqrt_result=False)
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info(method, size, e)
@@ -362,7 +488,7 @@ def run_benchmark(size_override=None,
         for segments in gpu_split_segments:
             try:
                 start_time = time.monotonic()
-                _ = edt(A, force_method="gpu-split", minimum_segments = segments)
+                _ = edt(A, force_method="gpu-split", minimum_segments=segments, sqrt_result=False)
                 end_time = time.monotonic()
             except Exception as e:
                 logging.info("gpu-split", size, e)
@@ -412,6 +538,20 @@ def run_benchmark(size_override=None,
                 results[f"edt_{size}"] = "fail"
             else:
                 results[f"edt_{size}"] = end_time - start_time
+                
+        if cucim_loaded:
+            try:
+                start_time = time.monotonic()
+                AA = cp.array(A)
+                _ = morphology.distance_transform_edt(AA)
+                end_time = time.monotonic()
+                del AA
+                cp._default_memory_pool.free_all_blocks()
+            except Exception as e:
+                print("cucim", size, e)
+                results[f"cucim_{segments}_{size}"] = "fail"
+            else:
+                results[f"cucim_{segments}_{size}"] = end_time - start_time
     
     if plot:
         import matplotlib.pyplot as plt
@@ -430,6 +570,7 @@ def run_benchmark(size_override=None,
         ndimage_names = [i for i in results.keys() if "ndimage" in i]
         sitk_names = [i for i in results.keys() if "sitk" in i]
         edt_names = [i for i in results.keys() if "edt" in i]
+        cucim_names = [i for i in results.keys() if "cucim" in i]
         values = [cpu_names, 
                   cpu_sqrt_names,
                   gpu_names,
@@ -442,7 +583,8 @@ def run_benchmark(size_override=None,
                   gpu_sqrt_split_4_names,
                   ndimage_names, 
                   sitk_names, 
-                  edt_names]
+                  edt_names,
+                  cucim_names]
         values = [i for i in values if len(i) > 0]
         for val in values:
             ax.plot(list(int(i.split("_")[-1]) for i in val if results[i] != "fail"),
