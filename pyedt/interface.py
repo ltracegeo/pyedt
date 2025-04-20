@@ -262,6 +262,140 @@ def edt_cpu(A, closed_border=False, sqrt_result=True, limit_cpus=None, scale=Fal
         return B[:, :, 0]
     else:
         return B
+        
+def edt_cpu_tiled_tiff(
+    in_tiff: str,
+    out_tiff: str,
+    tile_shape: tuple[int,int,int],
+    halo: int = 50,
+    **edt_kwargs
+):
+    """
+    in_tiff:  path to input TIFF (can be BigTIFF)
+    out_tiff: path to write float32 distance map
+    tile_shape: (z_tile, y_tile, x_tile)
+    halo: number of voxels of overlap on each side
+    edt_kwargs: passed to edt_cpu (e.g. closed_border=…, sqrt_result=…)
+    """
+    
+    import tifffile
+    # open input as a memmap
+    with tifffile.TiffFile(in_tiff) as tif:
+        # assume single‐series 3D
+        page = tif.series[0].pages[0]
+        shape = page.shape  # (Z, Y, X)
+        dtype = page.dtype
+
+        # create an empty output BigTIFF (float32)
+        out = tifffile.memmap(
+            out_tiff,
+            shape=shape,
+            dtype=np.float32,
+            bigtiff=True,
+            photometric='minisblack',
+        )
+
+        Z, Y, X = shape
+        tz, ty, tx = tile_shape
+
+        # iterate over tiles
+        for z0 in range(0, Z, tz):
+            z1 = min(z0 + tz, Z)
+            rz0, rz1 = max(0, z0 - halo), min(Z, z1 + halo)
+
+            for y0 in range(0, Y, ty):
+                y1 = min(y0 + ty, Y)
+                ry0, ry1 = max(0, y0 - halo), min(Y, y1 + halo)
+
+                for x0 in range(0, X, tx):
+                    x1 = min(x0 + tx, X)
+                    rx0, rx1 = max(0, x0 - halo), min(X, x1 + halo)
+
+                    # read the overlapped block
+                    block = page.asarray(
+                        key=None,
+                        memmap=True,
+                        level=0,
+                    )[rz0:rz1, ry0:ry1, rx0:rx1]
+
+                    # run EDT on the small block
+                    dist_block = edt_cpu(
+                        block.astype(np.uint32),
+                        **edt_kwargs
+                    )
+
+                    # write only the *central* (un‑halo’d) region back
+                    cz0, cy0, cx0 = z0 - rz0, y0 - ry0, x0 - rx0
+                    cz1 = cz0 + (z1 - z0)
+                    cy1 = cy0 + (y1 - y0)
+                    cx1 = cx0 + (x1 - x0)
+
+                    out[z0:z1, y0:y1, x0:x1] = dist_block[cz0:cz1, cy0:cy1, cx0:cx1]
+
+        # flush to disk
+        out.flush()
+
+
+def edt_cpu_tiled_h5(
+    in_h5: str,
+    out_h5: str,
+    dataset: str,
+    tile_shape: tuple[int,int,int],
+    halo: int = 50,
+    **edt_kwargs
+):
+    """
+    in_h5:     input .h5 file path
+    out_h5:    output .h5 path (will be created)
+    dataset:   name of the dataset inside the HDF5 file
+    tile_shape: (z_tile, y_tile, x_tile)
+    halo:       overlap in voxels
+    edt_kwargs: passed to edt_cpu
+    """
+    import h5py
+    with h5py.File(in_h5, 'r') as fin, h5py.File(out_h5, 'w') as fout:
+        dset_in  = fin[dataset]
+        Z, Y, X  = dset_in.shape
+
+        # create chunked float32 output
+        dset_out = fout.create_dataset(
+            dataset,
+            shape=(Z,Y,X),
+            dtype='f4',
+            chunks=tile_shape,
+            compression="gzip",
+        )
+
+        tz, ty, tx = tile_shape
+
+        for z0 in range(0, Z, tz):
+            z1 = min(z0 + tz, Z)
+            rz0, rz1 = max(0, z0 - halo), min(Z, z1 + halo)
+
+            for y0 in range(0, Y, ty):
+                y1 = min(y0 + ty, Y)
+                ry0, ry1 = max(0, y0 - halo), min(Y, y1 + halo)
+
+                for x0 in range(0, X, tx):
+                    x1 = min(x0 + tx, X)
+                    rx0, rx1 = max(0, x0 - halo), min(X, x1 + halo)
+
+                    # read overlapped block
+                    block = dset_in[rz0:rz1, ry0:ry1, rx0:rx1]
+
+                    dist_block = edt_cpu(
+                        block.astype(np.uint32),
+                        **edt_kwargs
+                    )
+
+                    # central region coords
+                    cz0, cy0, cx0 = z0 - rz0, y0 - ry0, x0 - rx0
+                    cz1 = cz0 + (z1 - z0)
+                    cy1 = cy0 + (y1 - y0)
+                    cx1 = cx0 + (x1 - x0)
+
+                    dset_out[z0:z1, y0:y1, x0:x1] = dist_block[cz0:cz1, cy0:cy1, cx0:cx1]
+
 
 @njit
 def jit_edt_cpu(
