@@ -4,6 +4,7 @@ import numpy as np
 from scipy import ndimage
 
 from numba import njit
+import tifffile as tf
 
 from pyedt.interface import *
 
@@ -14,6 +15,9 @@ scale_result = np.fromfile(pathlib.Path(__file__).parent/"scale_result_f32.raw",
 simple_result = np.fromfile(pathlib.Path(__file__).parent/"simple_result.raw", dtype=np.uint16).reshape(40, 50, 60).astype(np.uint32)
 sqrt_result = np.fromfile(pathlib.Path(__file__).parent/"sqrt_result_f32.raw", dtype=np.float32).reshape(40, 50, 60)
 two_d_result = np.fromfile(pathlib.Path(__file__).parent/"2d_result.raw", dtype=np.uint16).reshape(40, 50, 1).astype(np.uint32)
+tiff_input_path = pathlib.Path(__file__).parent/"temp_input.tif"
+tiff_output_path = pathlib.Path(__file__).parent/"temp_output.tif"
+
 EDGE_SIZE = (40, 50, 60)
 SAVE_IMAGE = True
 TOLERANCE = 1e-3
@@ -373,3 +377,36 @@ def test_autodecide():
     array = test_image
     processor = auto_decide_method(array)
     assert(processor in ("cpu", "gpu", "gpu-split"))
+
+def test_cpu_in_disk():
+    edt_cpu_in_disk(
+        input_path=tiff_input_path, 
+        output_path=tiff_output_path,
+        closed_border=False, 
+        sqrt_result=True,
+        limit_cpus=None, 
+        scale=False,
+    )
+    input_image_test = tf.imread(tiff_input_path)
+    result_reference = edt_cpu(input_image_test, sqrt_result=True)
+    output_image = tf.imread(tiff_output_path)
+    assert(np.allclose(result_reference, output_image, TOLERANCE))
+
+def test_cpu_in_disk_scale():
+    edt_cpu_in_disk(
+        input_path=tiff_input_path, 
+        output_path=tiff_output_path,
+        closed_border=False, 
+        sqrt_result=True,
+        limit_cpus=None, 
+        scale=(1.2, 2.4, 3.6),
+    )
+    input_image_test = tf.imread(tiff_input_path)
+    result_reference = edt_cpu(
+        input_image_test, 
+        sqrt_result=True, 
+        scale=(1.2, 2.4, 3.6)
+    )
+    output_image = tf.imread(tiff_output_path)
+    assert(np.allclose(result_reference, output_image, TOLERANCE))
+

@@ -5,6 +5,7 @@ import time
 
 from .functions import *
 from numba import cuda, float32, uint16, uint32, njit, prange, set_num_threads
+import tifffile as tf
 
 logger = logging.getLogger("numba")
 logger.setLevel(logging.ERROR)
@@ -262,6 +263,128 @@ def edt_cpu(A, closed_border=False, sqrt_result=True, limit_cpus=None, scale=Fal
         return B[:, :, 0]
     else:
         return B
+
+
+def edt_cpu_in_disk(
+        input_path, 
+        output_path,
+        closed_border=False, 
+        limit_cpus=None, 
+        scale=False,
+        sqrt_result=False,
+        n_splits=2,
+    ):
+    '''
+    Experimental features, take a .tiff file as input, and loads
+    and saves it in split prisms.
+    '''
+    if limit_cpus:
+        set_num_threads(limit_cpus)
+    mul = 1
+    tif = tf.TiffFile(input_path)
+    A = tif.series[0].asarray(out='memmap')
+    
+    if scale:
+        if len(scale) == 1: scale = scale * 3
+
+        # Scales too large can cause problems
+        max_ = max(scale)
+        lower_threshold = 100
+        upper_threshold = 1000
+        if max_ > upper_threshold:
+            mul1 = upper_threshold / max_
+            scale = tuple(i * mul1 for i in scale)
+            mul *= mul1
+
+        # Small non-integer scales cause errors because of rounding
+        if any(isinstance(i, float) for i in scale):
+            min_ = min(scale)
+            if min_ < lower_threshold:
+                mul2 = lower_threshold / min_
+                scale = tuple(i*mul2 for i in scale)
+                mul *= mul2
+    else:
+        scale = (False,) * 3
+
+    B = tf.memmap(
+        output_path,
+        shape=A.shape,
+        dtype=np.float32,
+        bigtiff=True,
+        photometric='minisblack',
+    )
+    
+    input_2d = (B.ndim == 2)
+    if input_2d:
+        B = B[..., np.newaxis]
+        A = A[..., np.newaxis]
+        
+    if not input_2d:
+        for i, j in ((a, b) 
+                     for a in range(n_splits) 
+                     for b in range(n_splits)
+                     ):
+            y_min = i * A.shape[1] // n_splits
+            y_max = (i + 1) * A.shape[1] // n_splits
+            z_min = j * A.shape[2] // n_splits
+            z_max = (j + 1) * A.shape[2] // n_splits
+            prism = np.array(A[:, y_min:y_max, z_min:z_max], dtype=np.float32)
+            _fill_array(A[:, y_min:y_max, z_min:z_max], prism)
+            single_pass_erosion(prism, closed_border=closed_border, scale=scale[0], axis="x")
+            B[:, y_min:y_max, z_min:z_max] = prism
+            B.flush()
+        for i, j in ((a, b) 
+                     for a in range(n_splits) 
+                     for b in range(n_splits)
+                     ):
+            x_min = i * A.shape[0] // n_splits
+            x_max = (i + 1) * A.shape[0] // n_splits
+            z_min = j * A.shape[2] // n_splits
+            z_max = (j + 1) * A.shape[2] // n_splits
+            prism = np.array(B[x_min:x_max, :, z_min:z_max])
+            single_pass_erosion(prism, closed_border=closed_border, scale=scale[1], axis="y")
+            B[x_min:x_max, :, z_min:z_max] = prism
+            B.flush()
+        for i, j in ((a, b) 
+                     for a in range(n_splits) 
+                     for b in range(n_splits)
+                     ):
+            x_min = i * A.shape[0] // n_splits
+            x_max = (i + 1) * A.shape[0] // n_splits
+            y_min = j * A.shape[1] // n_splits
+            y_max = (j + 1) * A.shape[1] // n_splits
+            prism = np.array(B[x_min:x_max, y_min:y_max, :])
+            single_pass_erosion(prism, closed_border=closed_border, scale=scale[2], axis="z")
+            if mul != 1:
+                prism /= mul ** 2
+            if sqrt_result:
+                inplace_sqrt(prism)
+                prism = prism.view(np.float32)
+            B[x_min:x_max, y_min:y_max, :] = prism
+            B.flush()
+    else: #input_2d
+        for i in range(n_splits):
+            y_min = i * A.shape[1] // n_splits
+            y_max = (i + 1) * A.shape[1] // n_splits
+            prism = np.array(A[:, y_min:y_max, :])
+            _fill_array(A[:, y_min:y_max, :], prism)
+            single_pass_erosion(prism, closed_border=closed_border, scale=scale[0], axis="x")
+            B[:, y_min:y_max, :] = prism
+            B.flush()
+        for i in range(n_splits):
+            x_min = i * A.shape[0] // n_splits
+            x_max = (i + 1) * A.shape[0] // n_splits
+            prism = np.array(B[x_min:x_max, :, :])
+            single_pass_erosion(prism, closed_border=closed_border, scale=scale[1], axis="y")
+            if mul != 1:
+                prism /= mul ** 2
+            if sqrt_result:
+                inplace_sqrt(prism)
+                prism = prism.view(np.float32)
+            B[x_min:x_max, :, :] = prism
+            B.flush()
+            B = B[:, :, 0]
+
 
 @njit
 def jit_edt_cpu(
