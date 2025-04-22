@@ -16,6 +16,7 @@ simple_result = np.fromfile(pathlib.Path(__file__).parent/"simple_result.raw", d
 sqrt_result = np.fromfile(pathlib.Path(__file__).parent/"sqrt_result_f32.raw", dtype=np.float32).reshape(40, 50, 60)
 two_d_result = np.fromfile(pathlib.Path(__file__).parent/"2d_result.raw", dtype=np.uint16).reshape(40, 50, 1).astype(np.uint32)
 tiff_input_path = pathlib.Path(__file__).parent/"temp_input.tif"
+tiff_2d_input_path = pathlib.Path(__file__).parent/"test_array_2d.tif"
 tiff_output_path = pathlib.Path(__file__).parent/"temp_output.tif"
 
 EDGE_SIZE = (40, 50, 60)
@@ -390,6 +391,29 @@ def test_cpu_in_disk():
     input_image_test = tf.imread(tiff_input_path)
     result_reference = edt_cpu(input_image_test, sqrt_result=True)
     output_image = tf.imread(tiff_output_path)
+    assert(np.allclose(result_reference, output_image, TOLERANCE))
+
+def test_cpu_in_disk_2d():
+    edt_cpu_in_disk(
+        input_path=tiff_2d_input_path, 
+        output_path=tiff_output_path,
+        closed_border=False, 
+        sqrt_result=True,
+        limit_cpus=None, 
+        scale=False,
+    )
+    input_image_test = tf.imread(tiff_2d_input_path)
+    # test_array = np.array(input_image_test).astype(np.uint16)
+    # tf.imwrite(
+    #     tiff_2d_input_path,
+    #     test_array,
+    #     shape=test_array.shape,
+    #     dtype=np.uint16,
+    #     photometric='minisblack',
+    # )
+    result_reference = edt_cpu(input_image_test, sqrt_result=True)
+    output_image = tf.imread(tiff_output_path)
+
     assert(np.allclose(result_reference, output_image, TOLERANCE))
 
 def test_cpu_in_disk_scale():
