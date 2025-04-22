@@ -383,7 +383,7 @@ def edt_cpu_in_disk(
                 prism = prism.view(np.float32)
             B[x_min:x_max, :, :] = prism
             B.flush()
-            B = B[:, :, 0]
+        B = B[:, :, 0]
 
 
 @njit
