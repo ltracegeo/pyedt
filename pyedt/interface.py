@@ -282,7 +282,7 @@ def edt_cpu_in_disk(
         set_num_threads(limit_cpus)
     mul = 1
     tif = tf.TiffFile(input_path)
-    A = tif.series[0].asarray(out='memmap')
+    A = tif.series[0].asarray(out='memmap').astype('uint8')
     
     if scale:
         if len(scale) == 1: scale = scale * 3
