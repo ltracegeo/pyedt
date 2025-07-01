@@ -1,8 +1,12 @@
 import setuptools
+from pathlib import Path
+
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 
 setuptools.setup(
     name="pyedt",
-    version="0.1.3",
+    version="0.1.5",
     author="LTrace technologies",
     description="Euclidian Distance Transform functions for GPU and parallel CPU",
     packages=["pyedt"],
@@ -18,4 +22,6 @@ setuptools.setup(
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
     ],
+    long_description=long_description,
+    long_description_content_type='text/markdown; charset=UTF-8; variant=GFM',
     )
