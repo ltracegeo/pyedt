@@ -36,7 +36,7 @@ def compile_gedt(line_length, voxels_per_thread, closed_border, axis):
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length-1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     if A[actual_tx, bx, by] >= 1:
                         shared[actual_tx, 0] = INF
                         shared[actual_tx, 1] = INF
@@ -48,7 +48,7 @@ def compile_gedt(line_length, voxels_per_thread, closed_border, axis):
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length-1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     shared[actual_tx, 0] = A[bx, actual_tx, by]
                     shared[actual_tx, 1] = A[bx, actual_tx, by]
         elif axis == 'z':
@@ -56,7 +56,7 @@ def compile_gedt(line_length, voxels_per_thread, closed_border, axis):
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length-1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     shared[actual_tx, 0] = A[bx, by, actual_tx]
                     shared[actual_tx, 1] = A[bx, by, actual_tx]
         
@@ -115,17 +115,17 @@ def compile_gedt(line_length, voxels_per_thread, closed_border, axis):
         if axis == 'x':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[actual_tx, bx, by] = shared[actual_tx, input_array]
         elif axis == 'y':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, actual_tx, by] = shared[actual_tx, input_array]
         elif axis == 'z':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, by, actual_tx] = shared[actual_tx, input_array]
     return gedt
         
@@ -154,7 +154,7 @@ def compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     if A[actual_tx, bx, by] >= 1:
                         shared[actual_tx, 0] = INF
                         shared[actual_tx, 1] = INF
@@ -166,7 +166,7 @@ def compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     shared[actual_tx, 0] = A[bx, actual_tx, by]
                     shared[actual_tx, 1] = A[bx, actual_tx, by]
         elif axis == 'z':
@@ -174,7 +174,7 @@ def compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis
                 changed[0] = 1
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     shared[actual_tx, 0] = A[bx, by, actual_tx]
                     shared[actual_tx, 1] = A[bx, by, actual_tx]
         
@@ -240,17 +240,17 @@ def compile_anisotropic_gedt(line_length, voxels_per_thread, closed_border, axis
         if axis == 'x':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[actual_tx, bx, by] = shared[actual_tx, input_array]
         elif axis == 'y':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, actual_tx, by] = shared[actual_tx, input_array]
         elif axis == 'z':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, by, actual_tx] = shared[actual_tx, input_array]
     return gedt
     
@@ -283,7 +283,7 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
                 if actual_tx >= max_tx: continue
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     labels[actual_tx] = reference[actual_tx, bx, by]
                     if A[actual_tx, bx, by] >= 1:
                         shared[actual_tx, 0] = INF
@@ -298,7 +298,7 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
                 if actual_tx >= max_tx: continue
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     labels[actual_tx] = reference[bx, actual_tx, by]
                     shared[actual_tx, 0] = A[bx, actual_tx, by]
                     shared[actual_tx, 1] = A[bx, actual_tx, by]
@@ -309,7 +309,7 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread * tx + i
                 if actual_tx >= max_tx: continue
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     labels[actual_tx] = reference[bx, by, actual_tx]
                     shared[actual_tx, 0] = A[bx, by, actual_tx]
                     shared[actual_tx, 1] = A[bx, by, actual_tx]
@@ -398,17 +398,17 @@ def compile_multilabel_gedt(line_length, voxels_per_thread, closed_border, axis,
         if axis == 'x':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[actual_tx, bx, by] = shared[actual_tx, input_array]
         elif axis == 'y':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, actual_tx, by] = shared[actual_tx, input_array]
         elif axis == 'z':
             for i in range(voxels_per_thread):
                 actual_tx = voxels_per_thread*tx + i
-                if (0 < actual_tx) and (actual_tx < (line_length - 1)):
+                if (0 <= actual_tx) and (actual_tx < line_length):
                     A[bx, by, actual_tx] = shared[actual_tx, input_array]
     return gedt
     
